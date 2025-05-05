@@ -1,10 +1,12 @@
 // frontend/src/components/security/ScanHistoryTable.js
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getStatusBadgeClass, getSeverityBadgeClass } from '../../utils/securityUtils';
 
-const ScanHistoryTable = ({ scans, loading, onSelectScan }) => {
+const ScanHistoryTable = ({ scans, loading, onSelectScan, onDeleteScan }) => {
+  const [deletingId, setDeletingId] = useState(null);
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center my-4">
@@ -22,6 +24,18 @@ const ScanHistoryTable = ({ scans, loading, onSelectScan }) => {
       </div>
     );
   }
+
+  const handleDelete = (e, scanId) => {
+    e.stopPropagation(); // Prevent row click event
+    
+    if (onDeleteScan) {
+      setDeletingId(scanId);
+      onDeleteScan(scanId)
+        .finally(() => {
+          setDeletingId(null);
+        });
+    }
+  };
   
   return (
     <div className="table-responsive">
@@ -65,9 +79,30 @@ const ScanHistoryTable = ({ scans, loading, onSelectScan }) => {
                 ))}
               </td>
               <td>
-                <Link to={`/scans/${scan.id}`} className="btn btn-sm btn-outline-primary">
-                  View
-                </Link>
+                <div className="btn-group" role="group">
+                  <Link 
+                    to={`/scans/${scan.id}`} 
+                    className="btn btn-sm btn-outline-primary"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    View
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger"
+                    onClick={(e) => handleDelete(e, scan.id)}
+                    disabled={deletingId === scan.id}
+                  >
+                    {deletingId === scan.id ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span className="visually-hidden">Deleting...</span>
+                      </>
+                    ) : (
+                      'Delete'
+                    )}
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

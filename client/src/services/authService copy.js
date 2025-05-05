@@ -3,8 +3,7 @@
 import api from './api';
 import { setTokens, clearTokens } from '../utils/storage';
 
-// Export the authService object directly
-const authService = {
+export const authService = {
   // Login user
   login: async (email, password) => {
     try {
@@ -61,61 +60,5 @@ const authService = {
   logout: () => {
     clearTokens();
     localStorage.removeItem('user');
-  },
-  
-  // Export user data
-  exportUserData: async () => {
-    try {
-      const response = await api.get('/auth/user-data/export/');
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data || 'Failed to export user data.' 
-      };
-    }
-  },
-  
-  // Deactivate user account
-  deactivateAccount: async () => {
-    try {
-      const response = await api.post('/auth/deactivate-account/');
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data || 'Failed to deactivate account.' 
-      };
-    }
-  },
-  
-  // Generate new API key
-  generateApiKey: async () => {
-    try {
-      const response = await api.post('/auth/api-keys/');
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data || 'Failed to generate API key.' 
-      };
-    }
-  },
-  
-  // Get user's API keys
-  getApiKeys: async () => {
-    try {
-      const response = await api.get('/auth/api-keys/');
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data || 'Failed to retrieve API keys.' 
-      };
-    }
   }
 };
-
-// Export as a named export and as a default export to ensure compatibility
-export { authService };
-export default authService;

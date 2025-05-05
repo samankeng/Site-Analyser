@@ -44,40 +44,6 @@ class ScanViewSet(viewsets.ModelViewSet):
         return Response({'error': 'Cannot cancel scan with status: ' + scan.status}, 
                        status=status.HTTP_400_BAD_REQUEST)
     
-    @action(detail=False, methods=['delete'])
-    def history(self, request):
-        """Delete all scan history for the current user"""
-        try:
-            # Get all scans for the current user
-            user_scans = self.get_queryset()
-            
-            # Count how many will be deleted
-            count = user_scans.count()
-            
-            if count > 0:
-                # Delete all scans
-                result = user_scans.delete()
-                deleted_count = result[0] if isinstance(result, tuple) and len(result) > 0 else count
-                
-                return Response({
-                    'success': True,
-                    'message': f'Successfully deleted {deleted_count} scans and related data.',
-                    'count': deleted_count
-                }, status=status.HTTP_200_OK)
-            else:
-                return Response({
-                    'success': True,
-                    'message': 'No scans found to delete.',
-                    'count': 0
-                }, status=status.HTTP_200_OK)
-            
-        except Exception as e:
-            logger.error(f"Error deleting scan history: {str(e)}")
-            return Response({
-                'success': False,
-                'error': f'Failed to delete scan history: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
     @action(detail=True, methods=['get'])
     def pdf(self, request, pk=None):
         """Generate a comprehensive PDF report for a scan with detailed findings and visualizations"""

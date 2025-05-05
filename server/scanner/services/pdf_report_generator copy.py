@@ -493,30 +493,16 @@ class PDFReportGenerator:
         elements.append(PageBreak())
     
     def _add_security_score(self, elements):
-        # """Add security score section with score visualization"""
-        # elements.append(Paragraph("3. Security Score", self.section_title_style))
-        # elements.append(Spacer(1, 12))
-        
-        # # Create score visualization
-        # severity_counts = self._get_severity_counts()
-        # security_score = self._calculate_security_score(severity_counts)
-        
-        # elements.append(Paragraph("Overall Security Score", self.subtitle_style))
-        
         """Add security score section with score visualization"""
         elements.append(Paragraph("3. Security Score", self.section_title_style))
         elements.append(Spacer(1, 12))
         
-        # Use the scan's security_score if available, otherwise calculate it
-        security_score = getattr(self.scan, 'security_score', None)
-        if security_score is None:
-            # Fall back to calculation if not provided
-            severity_counts = self._get_severity_counts()
-            security_score = self._calculate_security_score(severity_counts)
+        # Create score visualization
+        severity_counts = self._get_severity_counts()
+        security_score = self._calculate_security_score(severity_counts)
         
         elements.append(Paragraph("Overall Security Score", self.subtitle_style))
         
-            
         # Add score visualization
         score_visualization = self._create_score_gauge(security_score)
         elements.append(score_visualization)

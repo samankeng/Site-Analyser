@@ -5,104 +5,101 @@ import { Link } from 'react-router-dom';
 import SecurityScoreCard from '../../components/dashboard/SecurityScoreCard';
 import VulnerabilityChart from '../../components/dashboard/VulnerabilityChart';
 import ScanHistoryTable from '../../components/security/ScanHistoryTable';
-import { scanService } from '../../services/scanService';
 import AnomalyDetectionDashboard from '../../components/dashboard/AnomalyDetectionDashboard';
+import { reportService } from '../../services/reportService';
+import { scanService } from '../../services/scanService';
 
 const Dashboard = () => {
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
-  // Security metrics (these would be calculated based on scan results in a real implementation)
+  const [selectedScanId, setSelectedScanId] = useState(null);
   const [securityMetrics, setSecurityMetrics] = useState({
-    overallScore: 0,
-    categoryScores: {},
-    vulnerabilityCounts: {},
-    totalScans: 0,
+    overallScore: 100,
+    categoryScores: {
+      headers: 100,
+      ssl: 100,
+      vulnerabilities: 100,
+      content: 100
+    },
+    vulnerabilityCounts: {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0
+    },
+    totalScans: 0
   });
   
   useEffect(() => {
-    const fetchScans = async () => {
+    const fetchData = async () => {
       try {
-        const response = await scanService.getScans();
+        setLoading(true);
+        
+        // Use the unified report service to get reports
+        const response = await reportService.getReports(true);
         
         if (response.success) {
-          const scanData = response.data.results || [];
-          setScans(scanData);
+          const reportData = response.data;
           
-          // Calculate security metrics
-          calculateSecurityMetrics(scanData);
+          // Also fetch scans for scan history table
+          const scanResponse = await scanService.getScans();
+          
+          if (scanResponse.success) {
+            const scanData = scanResponse.data.results || [];
+            setScans(scanData);
+            
+            // Set the most recent scan as the selected scan
+            if (scanData.length > 0) {
+              setSelectedScanId(scanData[0].id);
+            }
+          }
+          
+          // Get security metrics from the LATEST report instead of averaging
+          if (reportData.length > 0) {
+            // Sort reports by date (descending) to get the latest first
+            const sortedReports = [...reportData].sort((a, b) => 
+              new Date(b.created_at) - new Date(a.created_at)
+            );
+            
+            // Get the most recent report
+            const latestReport = sortedReports[0];
+            
+            // Get vulnerability counts from latest report
+            const vulnerabilityCounts = 
+              latestReport.findings_summary?.counts || 
+              { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+            
+            // Use the security score directly from the latest report
+            const latestScore = latestReport.security_score || 100;
+            
+            // Update security metrics with data from the latest report only
+            setSecurityMetrics({
+              overallScore: latestScore,
+              categoryScores: {
+                headers: latestReport.category_scores?.headers || 100,
+                ssl: latestReport.category_scores?.ssl || 100,
+                vulnerabilities: latestReport.category_scores?.vulnerabilities || 100,
+                content: latestReport.category_scores?.content || 100
+              },
+              vulnerabilityCounts: vulnerabilityCounts,
+              totalScans: reportData.length
+            });
+          }
         } else {
           setError('Failed to fetch scan data');
         }
       } catch (error) {
-        console.error('Error fetching scans:', error);
+        console.error('Error fetching data:', error);
         setError('An unexpected error occurred');
       } finally {
         setLoading(false);
       }
     };
     
-    fetchScans();
+    fetchData();
   }, []);
-  
-  const calculateSecurityMetrics = (scanData) => {
-    // In a real implementation, this would be more sophisticated
-    
-    // Set default metrics
-    const metrics = {
-      overallScore: 100, // Default score
-      categoryScores: {
-        headers: 80,
-        ssl: 90,
-        vulnerabilities: 75,
-        content: 95,
-      },
-      vulnerabilityCounts: {
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-        info: 0,
-      },
-      totalScans: scanData.length,
-    };
-    
-    // Count vulnerabilities by severity
-    // In a real implementation, this would analyze actual scan results
-    if (scanData.length > 0) {
-      // This is simplified example logic - in reality, you'd aggregate from actual scan results
-      for (const scan of scanData) {
-        if (scan.results && scan.results.length > 0) {
-          for (const result of scan.results) {
-            if (result.severity in metrics.vulnerabilityCounts) {
-              metrics.vulnerabilityCounts[result.severity]++;
-            }
-          }
-        }
-      }
-      
-      const totalVulnerabilities = Object.values(metrics.vulnerabilityCounts).reduce((a, b) => a + b, 0);
-      // Adjust overall score based on vulnerabilities
-      // const totalVulnerabilities = Object.values(metrics.vulnerabilityCounts).reduce((a, b) => a + b, 0);
-      // const criticalFactor = metrics.vulnerabilityCounts.critical * 10;
-      // const highFactor = metrics.vulnerabilityCounts.high * 5;
-      // const mediumFactor = metrics.vulnerabilityCounts.medium * 2;
-
-      metrics.overallScore = 100;
-      metrics.overallScore -= (metrics.vulnerabilityCounts.critical || 0) * 20;
-      metrics.overallScore -= (metrics.vulnerabilityCounts.high || 0) * 10;
-      metrics.overallScore -= (metrics.vulnerabilityCounts.medium || 0) * 5;
-      metrics.overallScore -= (metrics.vulnerabilityCounts.low || 0) * 2;
-      
-      // Simple formula to adjust score based on vulnerabilities
-      if (totalVulnerabilities > 0) {
-        metrics.overallScore = Math.max(0, Math.min(100, metrics.overallScore));
-      }
-    }
-    
-    setSecurityMetrics(metrics);
-  };
   
   return (
     <div className="container py-4">
@@ -142,12 +139,22 @@ const Dashboard = () => {
             </Link>
           </div>
           
-          <ScanHistoryTable scans={scans} loading={loading} />
-        </div>
-        <div>
-        <AnomalyDetectionDashboard scanId={activeScan?.id} />
+          <ScanHistoryTable 
+            scans={scans} 
+            loading={loading}
+            onSelectScan={(scanId) => setSelectedScanId(scanId)} 
+          />
         </div>
       </div>
+      
+      {/* Only show anomaly detection if we have a selected scan */}
+      {selectedScanId && (
+        <div className="card shadow-sm mt-4">
+          <div className="card-body">
+            <AnomalyDetectionDashboard scanId={selectedScanId} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

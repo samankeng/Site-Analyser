@@ -1,10 +1,13 @@
 // frontend/src/pages/settings/Settings.js
 
 import React, { useState, useEffect } from 'react';
-import { authService } from '../../services/authService'; 
+import { useNavigate } from 'react-router-dom';
+import { authService } from '../../services/authService';
+import { scanService } from '../../services/scanService';
+import { clearTokens } from '../../utils/storage';
 
 const Settings = () => {
-  // Removed unused navigate variable
+  const navigate = useNavigate();
   
   const [profile, setProfile] = useState({
     email: '',
@@ -36,6 +39,20 @@ const Settings = () => {
   const [preferencesSuccess, setPreferencesSuccess] = useState('');
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
+  const [actionSuccess, setActionSuccess] = useState('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [actionTitle, setActionTitle] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [apiKeys, setApiKeys] = useState([]);
+  
+  // Helper function to format error messages
+  const formatErrorMessage = (errorObj) => {
+    if (typeof errorObj === 'string') return errorObj;
+    if (errorObj?.detail) return typeof errorObj.detail === 'string' ? errorObj.detail : JSON.stringify(errorObj.detail);
+    if (errorObj?.message) return errorObj.message;
+    return JSON.stringify(errorObj);
+  };
   
   // Fetch current user data on component mount
   useEffect(() => {
@@ -55,14 +72,16 @@ const Settings = () => {
           });
           
           if (response.data.preferences) {
-            // Fixed dependency warning by not depending on previous preferences state
             setPreferences(prevPreferences => ({
               ...prevPreferences,
               ...response.data.preferences
             }));
           }
+          
+          // Also fetch API keys if available
+          fetchApiKeys();
         } else {
-          setError('Failed to load user data. Please try again.');
+          setError(formatErrorMessage(response.error) || 'Failed to load user data. Please try again.');
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -73,7 +92,18 @@ const Settings = () => {
     };
     
     fetchUserData();
-  }, []); // No dependencies needed since this runs once on mount
+  }, []); 
+  
+  const fetchApiKeys = async () => {
+    try {
+      const response = await authService.getApiKeys();
+      if (response.success) {
+        setApiKeys(response.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching API keys:', error);
+    }
+  };
   
   const handleProfileChange = (e) => {
     const { name, value } = e.target;
@@ -103,7 +133,7 @@ const Settings = () => {
       
       if (response.success) {
         setProfileSuccess('Profile updated successfully.');
-        // Update local storage user data if needed
+        // Update local storage user data
         const userData = JSON.parse(localStorage.getItem('user') || '{}');
         localStorage.setItem('user', JSON.stringify({
           ...userData,
@@ -111,10 +141,10 @@ const Settings = () => {
         }));
       } else {
         // Handle validation errors
-        if (typeof response.error === 'object') {
+        if (typeof response.error === 'object' && !Array.isArray(response.error) && response.error !== null) {
           setFieldErrors(response.error);
         } else {
-          setError(response.error || 'Failed to update profile. Please try again.');
+          setError(formatErrorMessage(response.error) || 'Failed to update profile. Please try again.');
         }
       }
     } catch (error) {
@@ -143,8 +173,6 @@ const Settings = () => {
     }
     
     try {
-      // Since authService doesn't have a dedicated password update method,
-      // we'll use the updateProfile method with password data
       const response = await authService.updateProfile({
         current_password: password.current_password,
         new_password: password.new_password
@@ -159,10 +187,10 @@ const Settings = () => {
         });
       } else {
         // Handle validation errors
-        if (typeof response.error === 'object') {
+        if (typeof response.error === 'object' && !Array.isArray(response.error) && response.error !== null) {
           setFieldErrors(response.error);
         } else {
-          setError(response.error || 'Failed to update password. Please try again.');
+          setError(formatErrorMessage(response.error) || 'Failed to update password. Please try again.');
         }
       }
     } catch (error) {
@@ -181,8 +209,6 @@ const Settings = () => {
     setPreferencesSuccess('');
     
     try {
-      // Since authService doesn't have a dedicated preferences update method,
-      // we'll use the updateProfile method with preferences data
       const response = await authService.updateProfile({
         preferences: preferences
       });
@@ -190,7 +216,7 @@ const Settings = () => {
       if (response.success) {
         setPreferencesSuccess('Preferences updated successfully.');
       } else {
-        setError(response.error || 'Failed to update preferences. Please try again.');
+        setError(formatErrorMessage(response.error) || 'Failed to update preferences. Please try again.');
       }
     } catch (error) {
       console.error('Preferences update error:', error);
@@ -198,6 +224,159 @@ const Settings = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Account action methods
+  
+  const handleExportData = async () => {
+    setLoading(true);
+    setError('');
+    setActionSuccess('');
+    
+    try {
+      const response = await authService.exportUserData();
+      
+      if (response.success) {
+        // Create and download file with exported data
+        const dataStr = JSON.stringify(response.data, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = window.URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        
+        const filename = `${profile.username || 'user'}_data_export_${new Date().toISOString().split('T')[0]}.json`;
+        
+        link.href = url;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        setActionSuccess('Your data has been exported successfully.');
+      } else {
+        setError(formatErrorMessage(response.error) || 'Failed to export data. Please try again.');
+      }
+    } catch (error) {
+      console.error('Data export error:', error);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleDeleteScanHistory = async () => {
+    showConfirmationModal(
+      'Delete Scan History',
+      'Are you sure you want to delete all your scan history? This action cannot be undone.',
+      async () => {
+        setLoading(true);
+        setError('');
+        setActionSuccess('');
+        
+        try {
+          // Use scanService instead of authService for scan-related actions
+          const response = await scanService.deleteScanHistory();
+          
+          if (response.success) {
+            setActionSuccess('Your scan history has been deleted successfully.');
+          } else {
+            setError(formatErrorMessage(response.error) || 'Failed to delete scan history. Please try again.');
+          }
+        } catch (error) {
+          console.error('Delete scan history error:', error);
+          setError('An unexpected error occurred while deleting scan history. The endpoint may not be available.');
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
+  };
+  
+  const handleDeactivateAccount = async () => {
+    showConfirmationModal(
+      'Deactivate Account',
+      'Are you sure you want to deactivate your account? All your data will be inaccessible. This action can be reversed by contacting support.',
+      async () => {
+        setLoading(true);
+        setError('');
+        setActionSuccess('');
+        
+        try {
+          const response = await authService.deactivateAccount();
+          
+          if (response.success) {
+            setActionSuccess('Your account has been deactivated. You will be logged out in 5 seconds.');
+            // Log out the user after 5 seconds
+            setTimeout(() => {
+              clearTokens();
+              localStorage.removeItem('user');
+              navigate('/login');
+            }, 5000);
+          } else {
+            setError(formatErrorMessage(response.error) || 'Failed to deactivate account. Please try again.');
+          }
+        } catch (error) {
+          console.error('Account deactivation error:', error);
+          setError('An unexpected error occurred. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
+  };
+  
+  const showConfirmationModal = (title, message, onConfirm) => {
+    setActionTitle(title);
+    setActionMessage(message);
+    setConfirmAction(() => onConfirm);
+    setShowConfirmModal(true);
+  };
+  
+  const handleConfirmAction = () => {
+    if (confirmAction) {
+      confirmAction();
+    }
+    setShowConfirmModal(false);
+  };
+  
+  const handleCancelAction = () => {
+    setShowConfirmModal(false);
+  };
+  
+  // API key management
+  
+  const handleGenerateApiKey = async () => {
+    setLoading(true);
+    setError('');
+    setActionSuccess('');
+    
+    try {
+      const response = await authService.generateApiKey();
+      
+      if (response.success) {
+        setActionSuccess('New API key generated successfully.');
+        // Refresh API keys
+        fetchApiKeys();
+      } else {
+        setError(formatErrorMessage(response.error) || 'Failed to generate API key. Please try again.');
+      }
+    } catch (error) {
+      console.error('API key generation error:', error);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleCopyApiKey = (key) => {
+    navigator.clipboard.writeText(key)
+      .then(() => {
+        setActionSuccess('API key copied to clipboard.');
+        setTimeout(() => setActionSuccess(''), 3000);
+      })
+      .catch(err => {
+        console.error('Could not copy text: ', err);
+        setError('Failed to copy API key.');
+      });
   };
   
   if (loadingProfile) {
@@ -220,6 +399,12 @@ const Settings = () => {
       {error && (
         <div className="alert alert-danger" role="alert">
           {error}
+        </div>
+      )}
+      
+      {actionSuccess && (
+        <div className="alert alert-success" role="alert">
+          {actionSuccess}
         </div>
       )}
       
@@ -251,7 +436,7 @@ const Settings = () => {
                       required
                     />
                     {fieldErrors.email && (
-                      <div className="invalid-feedback">{fieldErrors.email}</div>
+                      <div className="invalid-feedback">{typeof fieldErrors.email === 'string' ? fieldErrors.email : JSON.stringify(fieldErrors.email)}</div>
                     )}
                   </div>
                   
@@ -267,7 +452,7 @@ const Settings = () => {
                       required
                     />
                     {fieldErrors.username && (
-                      <div className="invalid-feedback">{fieldErrors.username}</div>
+                      <div className="invalid-feedback">{typeof fieldErrors.username === 'string' ? fieldErrors.username : JSON.stringify(fieldErrors.username)}</div>
                     )}
                   </div>
                 </div>
@@ -369,7 +554,7 @@ const Settings = () => {
                     required
                   />
                   {fieldErrors.current_password && (
-                    <div className="invalid-feedback">{fieldErrors.current_password}</div>
+                    <div className="invalid-feedback">{typeof fieldErrors.current_password === 'string' ? fieldErrors.current_password : JSON.stringify(fieldErrors.current_password)}</div>
                   )}
                 </div>
                 
@@ -385,7 +570,7 @@ const Settings = () => {
                     required
                   />
                   {fieldErrors.new_password && (
-                    <div className="invalid-feedback">{fieldErrors.new_password}</div>
+                    <div className="invalid-feedback">{typeof fieldErrors.new_password === 'string' ? fieldErrors.new_password : JSON.stringify(fieldErrors.new_password)}</div>
                   )}
                   <div className="form-text">
                     Password must be at least 8 characters long with a combination of letters, numbers, and symbols.
@@ -404,7 +589,7 @@ const Settings = () => {
                     required
                   />
                   {fieldErrors.confirm_password && (
-                    <div className="invalid-feedback">{fieldErrors.confirm_password}</div>
+                    <div className="invalid-feedback">{typeof fieldErrors.confirm_password === 'string' ? fieldErrors.confirm_password : JSON.stringify(fieldErrors.confirm_password)}</div>
                   )}
                 </div>
                 
@@ -545,13 +730,35 @@ const Settings = () => {
             </div>
             <div className="card-body">
               <div className="d-grid gap-2">
-                <button className="btn btn-outline-primary" type="button">
-                  Export My Data
+                <button 
+                  className="btn btn-outline-primary" 
+                  type="button"
+                  onClick={handleExportData}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Exporting...
+                    </>
+                  ) : (
+                    'Export My Data'
+                  )}
                 </button>
-                <button className="btn btn-outline-warning" type="button">
+                <button 
+                  className="btn btn-outline-warning" 
+                  type="button"
+                  onClick={handleDeleteScanHistory}
+                  disabled={loading}
+                >
                   Delete Scan History
                 </button>
-                <button className="btn btn-outline-danger" type="button">
+                <button 
+                  className="btn btn-outline-danger" 
+                  type="button"
+                  onClick={handleDeactivateAccount}
+                  disabled={loading}
+                >
                   Deactivate Account
                 </button>
               </div>
@@ -566,36 +773,79 @@ const Settings = () => {
             <div className="card-body">
               <p className="text-muted">Manage your API keys for programmatic access to our services.</p>
               <div className="d-grid">
-                <button className="btn btn-outline-primary" type="button">
-                  Generate New API Key
+                <button 
+                  className="btn btn-outline-primary" 
+                  type="button"
+                  onClick={handleGenerateApiKey}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate New API Key'
+                  )}
                 </button>
               </div>
               
               <div className="mt-3">
-                <div className="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
-                  <div>
-                    <small className="d-block text-muted">Production</small>
-                    <small>••••••••••••ABCD</small>
+                {apiKeys && apiKeys.length > 0 ? (
+                  apiKeys.map((apiKey, index) => (
+                    <div key={index} className="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                      <div>
+                        <small className="d-block text-muted">{apiKey.name || (index === 0 ? 'Production' : 'Development')}</small>
+                        <small>{apiKey.masked_key || '••••••••••••' + (apiKey.key ? apiKey.key.slice(-4) : 'XXXX')}</small>
+                      </div>
+                      <button 
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => handleCopyApiKey(apiKey.key)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                    <div>
+                      <small className="d-block text-muted">Production</small>
+                      <small>••••••••••••ABCD</small>
+                    </div>
+                    <button 
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => handleCopyApiKey('Production key not available')}
+                    >
+                      Copy
+                    </button>
                   </div>
-                  <button className="btn btn-sm btn-outline-secondary">
-                    Copy
-                  </button>
-                </div>
-                
-                <div className="d-flex justify-content-between align-items-center p-2 bg-light rounded">
-                  <div>
-                    <small className="d-block text-muted">Development</small>
-                    <small>••••••••••••EFGH</small>
-                  </div>
-                  <button className="btn btn-sm btn-outline-secondary">
-                    Copy
-                  </button>
-                </div>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
+      
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="modal" tabIndex="-1" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">{actionTitle}</h5>
+                <button type="button" className="btn-close" onClick={handleCancelAction}></button>
+              </div>
+              <div className="modal-body">
+                <p>{actionMessage}</p>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={handleCancelAction}>Cancel</button>
+                <button type="button" className="btn btn-danger" onClick={handleConfirmAction}>Confirm</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

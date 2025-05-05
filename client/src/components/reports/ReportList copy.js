@@ -1,8 +1,8 @@
 // frontend/src/components/reports/ReportList.js
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { reportService } from '../../services/reportService';
+import { virtualReportService } from '../../services/virtualReportService';
 import ReportCard from './ReportCard';
 import ReportExport from './ReportExport';
 
@@ -15,16 +15,18 @@ const ReportList = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
-  const [useVirtualReports, setUseVirtualReports] = useState(true);
 
-  // Define fetchReports using useCallback before using it in useEffect
-  const fetchReports = useCallback(async () => {
+  useEffect(() => {
+    fetchReports();
+  }, []);
+
+  const fetchReports = async () => {
     setLoading(true);
     setError('');
     
     try {
-      // Use the unified report service to fetch reports
-      const response = await reportService.getReports(useVirtualReports);
+      // Use the virtual report service to fetch reports (converted from scans)
+      const response = await virtualReportService.getReports();
       
       if (response.success) {
         setReports(Array.isArray(response.data) ? response.data : []);
@@ -39,12 +41,7 @@ const ReportList = () => {
     } finally {
       setLoading(false);
     }
-  }, [useVirtualReports]);
-
-  // Now use fetchReports in useEffect
-  useEffect(() => {
-    fetchReports();
-  }, [fetchReports]);
+  };
 
   const handleSelectReport = (reportId) => {
     setSelectedReports(prev => {
@@ -74,7 +71,7 @@ const ReportList = () => {
 
   const handleExportReports = async (format, options) => {
     try {
-      await reportService.exportReports(selectedReports, format, options, useVirtualReports);
+      await virtualReportService.exportReports(selectedReports, format, options);
       setShowExportModal(false);
       // Reset selected reports after export
       setSelectedReports([]);
@@ -93,10 +90,6 @@ const ReportList = () => {
 
   const handleSortChange = (e) => {
     setSortOrder(e.target.value);
-  };
-
-  const toggleReportMode = () => {
-    setUseVirtualReports(!useVirtualReports);
   };
 
   // Apply filters, search, and sorting
@@ -167,24 +160,6 @@ const ReportList = () => {
           {error}
         </div>
       )}
-
-      {/* Report Type Toggle */}
-      <div className="card shadow-sm mb-3">
-        <div className="card-body">
-          <div className="form-check form-switch">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="reportModeSwitch"
-              checked={useVirtualReports}
-              onChange={toggleReportMode}
-            />
-            <label className="form-check-label" htmlFor="reportModeSwitch">
-              {useVirtualReports ? "Using virtual reports (from scans)" : "Using saved reports"}
-            </label>
-          </div>
-        </div>
-      </div>
 
       {/* Filters and Search */}
       <div className="card shadow-sm mb-4">

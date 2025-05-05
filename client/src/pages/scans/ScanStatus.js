@@ -49,6 +49,9 @@ const ScanStatus = () => {
   // Fetch scan data on component mount
   useEffect(() => {
     fetchScan();
+    if (scanData) {
+      console.log('Scan Data Structure:', scanData);
+    }
   }, [fetchScan]);
   
   // Poll for updates if scan is in progress
@@ -189,7 +192,7 @@ const ScanStatus = () => {
             </div>
             
             {/* Severity summary */}
-            {Object.keys(scanData.severityCounts).length > 0 && (
+            {/* {Object.keys(scanData.severityCounts).length > 0 && (
               <div className="mb-4">
                 <h6>Summary of Findings</h6>
                 <div className="d-flex flex-wrap">
@@ -203,7 +206,23 @@ const ScanStatus = () => {
                   ))}
                 </div>
               </div>
-            )}
+            )} */}
+
+{(scanData.severityCounts || (scanData.findings_summary && scanData.findings_summary.counts)) && (
+  <div className="mb-4">
+    <h6>Summary of Findings</h6>
+    <div className="d-flex flex-wrap">
+      {Object.entries(scanData.severityCounts || scanData.findings_summary.counts).map(([severity, count]) => (
+        <div key={severity} className="me-3 mb-2">
+          <span className={`badge ${getSeverityBadgeClass(severity)} me-1`}>
+            {count}
+          </span>
+          <span className="text-capitalize">{severity}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
             
             {scanData.results.length === 0 ? (
               <div className="alert alert-info">

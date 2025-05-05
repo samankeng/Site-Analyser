@@ -25,7 +25,7 @@ class ReportSerializer(serializers.ModelSerializer):
             'id', 'user', 'name', 'target_url', 'status', 'status_display',
             'created_at', 'started_at', 'completed_at', 'scan_types',
             'highest_severity', 'highest_severity_display', 'findings_summary',
-            'error_message'
+            'security_score', 'error_message'  # Added security_score
         ]
         read_only_fields = ['id', 'created_at', 'started_at', 'completed_at']
 
@@ -42,7 +42,7 @@ class ReportDetailSerializer(serializers.ModelSerializer):
             'id', 'user', 'name', 'target_url', 'status', 'status_display',
             'created_at', 'started_at', 'completed_at', 'scan_types',
             'highest_severity', 'highest_severity_display', 'findings_summary',
-            'results', 'notes', 'error_message', 'vulnerabilities'
+            'security_score', 'category_scores','results', 'notes', 'error_message', 'vulnerabilities'  # Added security_score
         ]
         read_only_fields = ['id', 'created_at', 'started_at', 'completed_at']
 

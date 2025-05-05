@@ -45,8 +45,6 @@ class Report(models.Model):
         default=SeverityLevel.NONE
     )
     findings_summary = models.JSONField(default=dict)  # Summary of findings by severity
-    security_score = models.IntegerField(default=100)  # Add this line
-    category_scores = models.JSONField(default=dict)
     
     # Results storage
     results = models.JSONField(default=dict)  # Detailed scan results
@@ -102,77 +100,6 @@ class Report(models.Model):
         
         self.highest_severity = highest
         return highest
-    
-    def calculate_security_score(self):
-        """Calculate and save security score based on findings"""
-        severity_weights = {
-            'critical': 20,
-            'high': 10,
-            'medium': 5,
-            'low': 2,
-            'info': 0
-        }
-        
-        # Start with perfect score
-        score = 100
-        
-        # Get counts from findings_summary
-        if self.findings_summary and 'counts' in self.findings_summary:
-            counts = self.findings_summary['counts']
-            for severity, count in counts.items():
-                if severity in severity_weights:
-                    score -= count * severity_weights[severity]
-        
-        # Ensure score is between 0-100
-        self.security_score = max(0, min(100, score))
-        return self.security_score
-    
-    def save(self, *args, **kwargs):
-        # Calculate security score
-        self.calculate_security_score()
-        
-        # Calculate category scores
-        self.category_scores = self.calculate_category_scores()
-        
-        # Call the original save method
-        super().save(*args, **kwargs)
-
-    def calculate_category_scores(self):
-        """Calculate security scores by category"""
-        category_scores = {
-            'headers': 100,
-            'ssl': 100,
-            'vulnerabilities': 100,
-            'content': 100
-        }
-        
-        # Group vulnerabilities by category
-        category_vulnerabilities = {}
-        vulnerabilities = Vulnerability.objects.filter(report=self)
-        
-        for vuln in vulnerabilities:
-            category = vuln.category.lower()
-            if category not in category_vulnerabilities:
-                category_vulnerabilities[category] = []
-            category_vulnerabilities[category].append(vuln)
-        
-        # Calculate score for each category
-        severity_weights = {
-            'critical': 20,
-            'high': 10,
-            'medium': 5,
-            'low': 2,
-            'info': 0
-        }
-        
-        for category, vulns in category_vulnerabilities.items():
-            if category in category_scores:
-                deduction = 0
-                for vuln in vulns:
-                    deduction += severity_weights.get(vuln.severity.lower(), 0)
-                category_scores[category] = max(0, min(100, 100 - deduction))
-        
-        return category_scores
 
 
 class ReportExport(models.Model):

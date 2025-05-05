@@ -31,9 +31,9 @@ const HomePage = () => {
             </div>
             <div className="col-lg-6 d-none d-lg-block">
               <img
-                src="../assets/images/hero-image.svg"
                 alt="Security scanning illustration"
                 className="img-fluid"
+                src="../assets/images/hero.svg"
               />
             </div>
           </div>

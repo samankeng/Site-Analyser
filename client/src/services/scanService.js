@@ -45,6 +45,31 @@ export const scanService = {
     }
   },
   
+  // Delete a specific scan
+  deleteScan: async (id) => {
+    try {
+      const response = await api.delete(`/scanner/scans/${id}/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.response?.data };
+    }
+  },
+  
+  // Delete all scan history for the current user
+  deleteScanHistory: async () => {
+    try {
+      // Use the correct endpoint for the custom action in the ViewSet
+      const response = await api.delete('/scanner/scans/history/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error deleting scan history:', error);
+      return { 
+        success: false, 
+        error: error.response?.data || 'Failed to delete scan history' 
+      };
+    }
+  },
+  
   // Get scan results
   getScanResults: async (scanId) => {
     try {

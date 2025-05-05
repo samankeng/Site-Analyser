@@ -6,14 +6,15 @@ import SecurityScoreCard from '../../components/dashboard/SecurityScoreCard';
 import VulnerabilityChart from '../../components/dashboard/VulnerabilityChart';
 import ScanHistoryTable from '../../components/security/ScanHistoryTable';
 import AnomalyDetectionDashboard from '../../components/dashboard/AnomalyDetectionDashboard';
+import { reportService } from '../../services/reportService';
 import { scanService } from '../../services/scanService';
-import { prepareDashboardMetrics } from '../../models/ScanResultsModel';
 
 const Dashboard = () => {
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedScanId, setSelectedScanId] = useState(null);
+  const [deleteSuccess, setDeleteSuccess] = useState('');
   const [securityMetrics, setSecurityMetrics] = useState({
     overallScore: 100,
     categoryScores: {
@@ -33,36 +34,108 @@ const Dashboard = () => {
   });
   
   useEffect(() => {
-    const fetchScans = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await scanService.getScans();
+        
+        // Use the unified report service to get reports
+        const response = await reportService.getReports(true);
         
         if (response.success) {
-          const scanData = response.data.results || [];
-          setScans(scanData);
+          const reportData = response.data;
           
-          // Set the most recent scan as the selected scan
-          if (scanData.length > 0) {
-            setSelectedScanId(scanData[0].id);
+          // Also fetch scans for scan history table
+          const scanResponse = await scanService.getScans();
+          
+          if (scanResponse.success) {
+            const scanData = scanResponse.data.results || [];
+            setScans(scanData);
+            
+            // Set the most recent scan as the selected scan
+            if (scanData.length > 0) {
+              setSelectedScanId(scanData[0].id);
+            }
           }
           
-          // Calculate security metrics
-          const metrics = prepareDashboardMetrics(scanData);
-          setSecurityMetrics(metrics);
+          // Get security metrics from the LATEST report instead of averaging
+          if (reportData.length > 0) {
+            // Sort reports by date (descending) to get the latest first
+            const sortedReports = [...reportData].sort((a, b) => 
+              new Date(b.created_at) - new Date(a.created_at)
+            );
+            
+            // Get the most recent report
+            const latestReport = sortedReports[0];
+            
+            // Get vulnerability counts from latest report
+            const vulnerabilityCounts = 
+              latestReport.findings_summary?.counts || 
+              { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+            
+            // Use the security score directly from the latest report
+            const latestScore = latestReport.security_score || 100;
+            
+            // Update security metrics with data from the latest report only
+            setSecurityMetrics({
+              overallScore: latestScore,
+              categoryScores: {
+                headers: latestReport.category_scores?.headers || 100,
+                ssl: latestReport.category_scores?.ssl || 100,
+                vulnerabilities: latestReport.category_scores?.vulnerabilities || 100,
+                content: latestReport.category_scores?.content || 100
+              },
+              vulnerabilityCounts: vulnerabilityCounts,
+              totalScans: reportData.length
+            });
+          }
         } else {
           setError('Failed to fetch scan data');
         }
       } catch (error) {
-        console.error('Error fetching scans:', error);
+        console.error('Error fetching data:', error);
         setError('An unexpected error occurred');
       } finally {
         setLoading(false);
       }
     };
     
-    fetchScans();
+    fetchData();
   }, []);
+  
+  const handleDeleteScan = async (scanId) => {
+    try {
+      // Clear any previous success messages
+      setDeleteSuccess('');
+      
+      const response = await scanService.deleteScan(scanId);
+      
+      if (response.success) {
+        // Remove the deleted scan from the list
+        setScans(scans.filter(scan => scan.id !== scanId));
+        
+        // Show success message
+        setDeleteSuccess('Scan deleted successfully');
+        
+        // Clear the selected scan if it was the one that was deleted
+        if (selectedScanId === scanId) {
+          setSelectedScanId(null);
+        }
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          setDeleteSuccess('');
+        }, 3000);
+      } else {
+        setError(response.error || 'Failed to delete scan');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error deleting scan:', error);
+      setError('An unexpected error occurred while deleting the scan');
+      throw error;
+    }
+  };
   
   return (
     <div className="container py-4">
@@ -76,6 +149,12 @@ const Dashboard = () => {
       {error && (
         <div className="alert alert-danger" role="alert">
           {error}
+        </div>
+      )}
+      
+      {deleteSuccess && (
+        <div className="alert alert-success" role="alert">
+          {deleteSuccess}
         </div>
       )}
       
@@ -106,6 +185,7 @@ const Dashboard = () => {
             scans={scans} 
             loading={loading}
             onSelectScan={(scanId) => setSelectedScanId(scanId)} 
+            onDeleteScan={handleDeleteScan}
           />
         </div>
       </div>

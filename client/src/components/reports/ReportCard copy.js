@@ -2,8 +2,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { reportService } from '../../services/reportService';
-import { getStatusBadgeClass, getSeverityBadgeClass } from '../../utils/securityUtils';
+import { virtualReportService } from '../../services/virtualReportService';
 
 const ReportCard = ({ report, isSelected, onSelectReport }) => {
   // Helper function to display the date in a user-friendly format
@@ -11,6 +10,40 @@ const ReportCard = ({ report, isSelected, onSelectReport }) => {
     if (!dateString) return 'N/A';
     const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
     return new Date(dateString).toLocaleDateString(undefined, options);
+  };
+
+  // Helper function for getting status badge color
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-success';
+      case 'pending':
+        return 'bg-warning text-dark';
+      case 'in_progress':
+        return 'bg-info text-dark';
+      case 'failed':
+        return 'bg-danger';
+      default:
+        return 'bg-secondary';
+    }
+  };
+
+  // Helper function for severity badge
+  const getSeverityBadgeClass = (severity) => {
+    switch (severity) {
+      case 'critical':
+        return 'bg-danger';
+      case 'high':
+        return 'bg-warning text-dark';
+      case 'medium':
+        return 'bg-info text-dark';
+      case 'low':
+        return 'bg-secondary';
+      case 'info':
+        return 'bg-light text-dark';
+      default:
+        return 'bg-secondary';
+    }
   };
 
   // Function to get finding counts summary
@@ -47,12 +80,10 @@ const ReportCard = ({ report, isSelected, onSelectReport }) => {
     );
   };
 
-  // Handle PDF download - uses the unified report service
+  // Handle PDF download - for a virtual report this uses the original scan ID
   const handleDownloadPdf = async () => {
     try {
-      // Use the new unified report service
-      const useVirtual = report.is_virtual === true;
-      await reportService.generatePdf(report.id, useVirtual);
+      await virtualReportService.generatePdf(report.id);
     } catch (error) {
       console.error('Error downloading PDF:', error);
       alert('Failed to download PDF. Please try again.');
