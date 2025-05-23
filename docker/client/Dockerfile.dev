@@ -1,0 +1,22 @@
+# docker/client/Dockerfile.dev
+
+FROM node:16-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy source code (in development, this is usually mounted as a volume)
+COPY . .
+
+# Set environment variables
+ENV NODE_ENV=dev
+ENV CHOKIDAR_USEPOLLING=true
+
+# Expose port for development server
+EXPOSE 3000
+
+# Start development server with hot reloading
+CMD ["npm", "start"]
