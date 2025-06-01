@@ -84,23 +84,52 @@ export const scanService = {
   // Get scan results
   getScanResults: async (scanId) => {
     try {
-      const response = await api.get(`/scanner/scans/${scanId}/results/`);
-      return { success: true, data: response.data };
+      let allResults = [];
+      let page = 1;
+      let hasNext = true;
+
+      while (hasNext) {
+        const response = await api.get(
+          `/scanner/scans/${scanId}/results/?page=${page}`
+        );
+        const data = response.data;
+
+        const results = Array.isArray(data.results) ? data.results : data;
+        allResults = allResults.concat(results);
+        hasNext = !!data.next;
+        page++;
+      }
+
+      return { success: true, data: { results: allResults } };
     } catch (error) {
       return { success: false, error: error.response?.data };
     }
   },
 
   // Combine scan data and results
+
   getScanWithResults: async (id) => {
     try {
       const scanResponse = await api.get(`/scanner/scans/${id}/`);
-      const resultsResponse = await api.get(`/scanner/scans/${id}/results/`);
 
-      const processedData = processScanResults(
-        scanResponse.data,
-        resultsResponse.data.results || []
-      );
+      // Fetch ALL paginated results
+      let allResults = [];
+      let page = 1;
+      let hasNext = true;
+
+      while (hasNext) {
+        const response = await api.get(
+          `/scanner/scans/${id}/results/?page=${page}`
+        );
+        const data = response.data;
+
+        const results = Array.isArray(data.results) ? data.results : data;
+        allResults = allResults.concat(results);
+        hasNext = !!data.next;
+        page++;
+      }
+
+      const processedData = processScanResults(scanResponse.data, allResults);
 
       return { success: true, data: processedData };
     } catch (error) {
