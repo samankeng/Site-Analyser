@@ -13,8 +13,11 @@
 .env.test
 .env.production
 .env.staging
-server/.env
+server/.env*
 client/.env*
+
+
+accounts/migrations/0*.py
 
 # Secret keys and certificates
 *.key

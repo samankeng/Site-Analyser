@@ -1,49 +1,40 @@
-# docker/celery/Dockerfile - Updated with OAuth dependencies
+# docker/celery/Dockerfile
+
 FROM python:3.10-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DJANGO_SETTINGS_MODULE=site_analyser.settings.production
 
-WORKDIR /app
-
-# Install dependencies
+# Install system dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    gcc \
     postgresql-client \
-    python3-dev \
+    netcat-traditional \
+    build-essential \
     libpq-dev \
-    netcat-openbsd \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Set work directory
+WORKDIR /app
+
 # Install Python dependencies
-COPY requirements.txt .
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt \
-    && pip install django-oauth-toolkit==1.7.1 \
-    && pip install social-auth-app-django==5.4.0 \
-    && pip install social-auth-core==4.5.1 \
-    && pip install requests-oauthlib==1.3.1
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project
-COPY . .
-
-# Set entrypoint script as executable
+# Copy entrypoint script (using your existing celery-entrypoint.sh)
 COPY scripts/celery-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Create a non-root user and change permissions
-RUN adduser --disabled-password --gecos "" appuser \
-    && chown -R appuser:appuser /app /entrypoint.sh
+# Copy project
+COPY . /app/
 
-# Switch to non-root user
-USER appuser
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/logs /app/static /app/media \
+    && chmod 755 /app/logs /app/static /app/media
 
-# Run entrypoint script
+# Use entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Start Celery worker
+# Default command (can be overridden)
 CMD ["celery", "--app=celery_app", "worker", "--loglevel=info"]

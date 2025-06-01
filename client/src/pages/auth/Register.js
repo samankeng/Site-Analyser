@@ -1,4 +1,4 @@
-// frontend/src/pages/auth/Register.js - Updated
+// frontend/src/pages/auth/Register.js - Fixed to remove username field
 
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -10,7 +10,6 @@ const Register = () => {
 
   const [formData, setFormData] = useState({
     email: "",
-    username: "",
     password: "",
     password_confirm: "",
     first_name: "",
@@ -39,16 +38,46 @@ const Register = () => {
       const response = await authService.register(formData);
 
       if (response.success) {
-        // Show success message or redirect to login
+        // Always redirect to login with verification message
         navigate("/login", {
           state: {
             message:
-              "Registration successful! Please sign in with your credentials.",
+              "Registration successful! Please check your email to verify your account before signing in.",
+            email: formData.email,
+            showEmailVerification: true,
           },
         });
       } else {
         // Handle validation errors
         if (typeof response.error === "object") {
+          // Check if it's an email already exists error
+          if (response.error.email) {
+            const emailError = Array.isArray(response.error.email)
+              ? response.error.email[0]
+              : response.error.email;
+
+            // Convert to string if it's an ErrorDetail object
+            const emailErrorString =
+              typeof emailError === "string"
+                ? emailError
+                : emailError.toString();
+
+            if (
+              emailErrorString.toLowerCase().includes("already exists") ||
+              emailErrorString.toLowerCase().includes("user with this email")
+            ) {
+              // Redirect to login page with message about existing email
+              navigate("/login", {
+                state: {
+                  message:
+                    "An account with this email already exists. Please sign in instead.",
+                  email: formData.email,
+                  type: "info",
+                },
+              });
+              return;
+            }
+          }
           setFieldErrors(response.error);
         } else {
           setError(response.error || "Registration failed. Please try again.");
@@ -89,52 +118,30 @@ const Register = () => {
 
               {/* Registration Form */}
               <form onSubmit={handleSubmit}>
-                <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label htmlFor="email" className="form-label">
-                      Email address *
-                    </label>
-                    <input
-                      type="email"
-                      className={`form-control ${
-                        fieldErrors.email ? "is-invalid" : ""
-                      }`}
-                      id="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      required
-                      autoComplete="email"
-                    />
-                    {fieldErrors.email && (
-                      <div className="invalid-feedback">
-                        {fieldErrors.email}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="col-md-6 mb-3">
-                    <label htmlFor="username" className="form-label">
-                      Username *
-                    </label>
-                    <input
-                      type="text"
-                      className={`form-control ${
-                        fieldErrors.username ? "is-invalid" : ""
-                      }`}
-                      id="username"
-                      name="username"
-                      value={formData.username}
-                      onChange={handleChange}
-                      required
-                      autoComplete="username"
-                    />
-                    {fieldErrors.username && (
-                      <div className="invalid-feedback">
-                        {fieldErrors.username}
-                      </div>
-                    )}
-                  </div>
+                <div className="mb-3">
+                  <label htmlFor="email" className="form-label">
+                    Email address *
+                  </label>
+                  <input
+                    type="email"
+                    className={`form-control ${
+                      fieldErrors.email ? "is-invalid" : ""
+                    }`}
+                    id="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    required
+                    autoComplete="email"
+                    placeholder="Enter your email address"
+                  />
+                  {fieldErrors.email && (
+                    <div className="invalid-feedback">
+                      {Array.isArray(fieldErrors.email)
+                        ? fieldErrors.email.join(", ")
+                        : fieldErrors.email}
+                    </div>
+                  )}
                 </div>
 
                 <div className="row">
@@ -153,10 +160,13 @@ const Register = () => {
                       onChange={handleChange}
                       required
                       autoComplete="new-password"
+                      placeholder="Enter password"
                     />
                     {fieldErrors.password && (
                       <div className="invalid-feedback">
-                        {fieldErrors.password}
+                        {Array.isArray(fieldErrors.password)
+                          ? fieldErrors.password.join(", ")
+                          : fieldErrors.password}
                       </div>
                     )}
                   </div>
@@ -176,10 +186,13 @@ const Register = () => {
                       onChange={handleChange}
                       required
                       autoComplete="new-password"
+                      placeholder="Confirm password"
                     />
                     {fieldErrors.password_confirm && (
                       <div className="invalid-feedback">
-                        {fieldErrors.password_confirm}
+                        {Array.isArray(fieldErrors.password_confirm)
+                          ? fieldErrors.password_confirm.join(", ")
+                          : fieldErrors.password_confirm}
                       </div>
                     )}
                   </div>
@@ -192,13 +205,23 @@ const Register = () => {
                     </label>
                     <input
                       type="text"
-                      className="form-control"
+                      className={`form-control ${
+                        fieldErrors.first_name ? "is-invalid" : ""
+                      }`}
                       id="first_name"
                       name="first_name"
                       value={formData.first_name}
                       onChange={handleChange}
                       autoComplete="given-name"
+                      placeholder="Enter first name"
                     />
+                    {fieldErrors.first_name && (
+                      <div className="invalid-feedback">
+                        {Array.isArray(fieldErrors.first_name)
+                          ? fieldErrors.first_name.join(", ")
+                          : fieldErrors.first_name}
+                      </div>
+                    )}
                   </div>
 
                   <div className="col-md-6 mb-3">
@@ -207,13 +230,23 @@ const Register = () => {
                     </label>
                     <input
                       type="text"
-                      className="form-control"
+                      className={`form-control ${
+                        fieldErrors.last_name ? "is-invalid" : ""
+                      }`}
                       id="last_name"
                       name="last_name"
                       value={formData.last_name}
                       onChange={handleChange}
                       autoComplete="family-name"
+                      placeholder="Enter last name"
                     />
+                    {fieldErrors.last_name && (
+                      <div className="invalid-feedback">
+                        {Array.isArray(fieldErrors.last_name)
+                          ? fieldErrors.last_name.join(", ")
+                          : fieldErrors.last_name}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -224,13 +257,23 @@ const Register = () => {
                     </label>
                     <input
                       type="text"
-                      className="form-control"
+                      className={`form-control ${
+                        fieldErrors.company ? "is-invalid" : ""
+                      }`}
                       id="company"
                       name="company"
                       value={formData.company}
                       onChange={handleChange}
                       autoComplete="organization"
+                      placeholder="Enter company name"
                     />
+                    {fieldErrors.company && (
+                      <div className="invalid-feedback">
+                        {Array.isArray(fieldErrors.company)
+                          ? fieldErrors.company.join(", ")
+                          : fieldErrors.company}
+                      </div>
+                    )}
                   </div>
 
                   <div className="col-md-6 mb-3">
@@ -239,13 +282,23 @@ const Register = () => {
                     </label>
                     <input
                       type="text"
-                      className="form-control"
+                      className={`form-control ${
+                        fieldErrors.job_title ? "is-invalid" : ""
+                      }`}
                       id="job_title"
                       name="job_title"
                       value={formData.job_title}
                       onChange={handleChange}
                       autoComplete="organization-title"
+                      placeholder="Enter job title"
                     />
+                    {fieldErrors.job_title && (
+                      <div className="invalid-feedback">
+                        {Array.isArray(fieldErrors.job_title)
+                          ? fieldErrors.job_title.join(", ")
+                          : fieldErrors.job_title}
+                      </div>
+                    )}
                   </div>
                 </div>
 

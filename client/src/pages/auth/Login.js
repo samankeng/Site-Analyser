@@ -1,39 +1,62 @@
-// frontend/src/pages/auth/Login.js - Updated
+// frontend/src/pages/auth/Login.js - Enhanced with message handling
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import SocialLoginButtons from "../../components/auth/SocialLoginButtons";
-import { useAuth } from "../../contexts/AuthContext";
+import { authService } from "../../services/authService";
 
 const Login = () => {
-  const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [formData, setFormData] = useState({
+    email: location.state?.email || "", // Pre-fill email if provided
+    password: "",
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("info"); // info, success, warning
 
-  // Get the return URL from location state or default to dashboard
-  const from = location.state?.from?.pathname || "/dashboard";
+  // Handle messages from navigation state
+  useEffect(() => {
+    if (location.state?.message) {
+      setMessage(location.state.message);
+      setMessageType(location.state.type || "info");
 
-  // Check for success message from registration
-  const successMessage = location.state?.message;
+      // Clear the state to prevent message from persisting on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+
+    // Clear error when user starts typing
+    if (error) setError("");
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     setLoading(true);
     setError("");
+    setMessage("");
 
     try {
-      const result = await login(email, password);
+      const response = await authService.login(
+        formData.email,
+        formData.password
+      );
 
-      if (result.success) {
-        navigate(from, { replace: true });
+      if (response.success) {
+        // Successful login
+        navigate("/dashboard", { replace: true });
       } else {
-        setError(result.error);
+        setError(
+          response.error || "Login failed. Please check your credentials."
+        );
       }
     } catch (error) {
       setError("An unexpected error occurred. Please try again.");
@@ -43,22 +66,55 @@ const Login = () => {
     }
   };
 
+  const handleForgotPassword = () => {
+    navigate("/auth/forgot-password", {
+      state: { email: formData.email },
+    });
+  };
+
   return (
     <div className="container py-5">
       <div className="row justify-content-center">
         <div className="col-md-6 col-lg-5">
           <div className="card shadow">
             <div className="card-body p-5">
-              <h2 className="text-center mb-4">Welcome Back</h2>
+              <h2 className="text-center mb-4">Sign In</h2>
 
-              {successMessage && (
-                <div className="alert alert-success" role="alert">
-                  {successMessage}
+              {/* Display messages from navigation */}
+              {message && (
+                <div
+                  className={`alert alert-${
+                    messageType === "info"
+                      ? "info"
+                      : messageType === "success"
+                      ? "success"
+                      : "warning"
+                  } alert-dismissible fade show`}
+                  role="alert"
+                >
+                  <i
+                    className={`fas ${
+                      messageType === "info"
+                        ? "fa-info-circle"
+                        : messageType === "success"
+                        ? "fa-check-circle"
+                        : "fa-exclamation-triangle"
+                    } me-2`}
+                  ></i>
+                  {message}
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => setMessage("")}
+                    aria-label="Close"
+                  ></button>
                 </div>
               )}
 
+              {/* Display login errors */}
               {error && (
                 <div className="alert alert-danger" role="alert">
+                  <i className="fas fa-exclamation-circle me-2"></i>
                   {error}
                 </div>
               )}
@@ -74,7 +130,7 @@ const Login = () => {
                 </span>
               </div>
 
-              {/* Email/Password Form */}
+              {/* Login Form */}
               <form onSubmit={handleSubmit}>
                 <div className="mb-3">
                   <label htmlFor="email" className="form-label">
@@ -84,10 +140,12 @@ const Login = () => {
                     type="email"
                     className="form-control"
                     id="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
                     required
                     autoComplete="email"
+                    placeholder="Enter your email"
                   />
                 </div>
 
@@ -99,10 +157,12 @@ const Login = () => {
                     type="password"
                     className="form-control"
                     id="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
                     required
                     autoComplete="current-password"
+                    placeholder="Enter your password"
                   />
                 </div>
 
@@ -110,9 +170,9 @@ const Login = () => {
                   <input
                     type="checkbox"
                     className="form-check-input"
-                    id="rememberMe"
+                    id="remember"
                   />
-                  <label className="form-check-label" htmlFor="rememberMe">
+                  <label className="form-check-label" htmlFor="remember">
                     Remember me
                   </label>
                 </div>
@@ -130,7 +190,7 @@ const Login = () => {
                           role="status"
                           aria-hidden="true"
                         ></span>
-                        Signing in...
+                        Signing In...
                       </>
                     ) : (
                       "Sign In"
@@ -140,15 +200,19 @@ const Login = () => {
               </form>
 
               <div className="text-center mt-4">
-                <p className="mb-2">
-                  <Link to="/forgot-password" className="text-decoration-none">
+                <p>
+                  <button
+                    type="button"
+                    className="btn btn-link text-decoration-none p-0"
+                    onClick={handleForgotPassword}
+                  >
                     Forgot your password?
-                  </Link>
+                  </button>
                 </p>
                 <p>
                   Don't have an account?{" "}
                   <Link to="/register" className="text-decoration-none">
-                    Sign up
+                    Create one
                   </Link>
                 </p>
               </div>

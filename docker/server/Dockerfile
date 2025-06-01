@@ -4,7 +4,7 @@ FROM python:3.10-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DJANGO_SETTINGS_MODULE=site_analyser.settings.production
+ENV DJANGO_SETTINGS_MODULE=site_analyser.settings.base
 
 WORKDIR /app
 

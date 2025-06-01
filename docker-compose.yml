@@ -1,4 +1,4 @@
-# docker-compose.yml - Cleaned up (no hardcoded secrets)
+# docker-compose.yml - Fixed with proper permissions and directory handling
 services:
   # PostgreSQL Database
   db:
@@ -14,6 +14,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - "5050:80"
+    env_file:
+      - ./server/.env
+    depends_on:
+      - db
     restart: unless-stopped
 
   # Redis for Celery
@@ -38,6 +47,7 @@ services:
     volumes:
       - static_volume:/app/static
       - media_volume:/app/media
+      - logs_volume:/app/logs
       - ./server:/app
     ports:
       - "8000:8000"
@@ -50,12 +60,21 @@ services:
       - ./server/.env
     restart: unless-stopped
     environment:
-      - DJANGO_SETTINGS_MODULE=site_analyser.settings.development
+      - DJANGO_SETTINGS_MODULE=site_analyser.settings.base
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "8000"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Simplified command without chmod (let Docker handle volume permissions)
+    command: >
+      bash -c "
+        mkdir -p /app/logs /app/static /app/media &&
+        python manage.py collectstatic --noinput &&
+        python manage.py migrate &&
+        python manage.py runserver 0.0.0.0:8000
+      "
 
   # Celery Worker
   celery:
@@ -63,17 +82,22 @@ services:
       context: ./server
       dockerfile: ../docker/celery/Dockerfile
     volumes:
+      - logs_volume:/app/logs
       - ./server:/app
     depends_on:
       db:
         condition: service_healthy 
-      server:
-        condition: service_healthy
       redis:
         condition: service_healthy
+      server:
+        condition: service_started  # Changed from service_healthy to service_started
     env_file:
       - ./server/.env
     restart: unless-stopped
+    entrypoint: ["/entrypoint.sh"]
+    command: ["celery", "--app=celery_app", "worker", "--loglevel=info"]
+    environment:
+      - PYTHONPATH=/app
 
   # Celery Beat for scheduled tasks
   celery-beat:
@@ -81,11 +105,10 @@ services:
       context: ./server
       dockerfile: ../docker/celery/Dockerfile
     volumes:
+      - logs_volume:/app/logs
       - ./server:/app
     depends_on:
       db:
-        condition: service_healthy
-      server:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -93,7 +116,8 @@ services:
         condition: service_started
     env_file:
       - ./server/.env
-    command: celery --app=celery_app beat --loglevel=info
+    entrypoint: ["/entrypoint.sh"]
+    command: ["celery", "--app=celery_app", "beat", "--loglevel=info"]
     restart: unless-stopped
 
   # React Frontend (Client) - Development
@@ -149,4 +173,5 @@ volumes:
   redis_data:
   static_volume:
   media_volume:
+  logs_volume:
   client_build:

@@ -8,6 +8,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# 🔽 This line ensures public assets like images are available
+COPY public ./public
+
+# 🔽 This copies all source code
+COPY src ./src
+
 # Copy source code (in development, this is usually mounted as a volume)
 COPY . .
 

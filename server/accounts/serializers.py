@@ -22,11 +22,17 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ('id', 'email', 'username', 'first_name', 'last_name', 
-                 'company', 'job_title', 'date_joined', 'avatar_url',
-                 'is_social_account', 'social_provider', 'profile_completed',
-                 'full_name', 'social_profiles', 'api_key')
-        read_only_fields = ('id', 'date_joined', 'is_social_account', 'social_provider', 'api_key')
+        fields = (
+            'id', 'email', 'username', 'first_name', 'last_name', 
+            'company', 'job_title', 'date_joined', 'avatar_url',
+            'is_social_account', 'social_provider', 'profile_completed',
+            'full_name', 'social_profiles', 'api_key', 'is_email_verified',
+            'is_staff', 'is_superuser', 'is_active'  # ← ADD THESE CRITICAL FIELDS
+        )
+        read_only_fields = (
+            'id', 'date_joined', 'is_social_account', 'social_provider', 
+            'api_key', 'username', 'is_staff', 'is_superuser', 'is_active'  # ← MAKE ADMIN FIELDS READ-ONLY
+        )
     
     def get_social_profiles(self, obj):
         """Get user's social auth profiles"""
@@ -43,19 +49,35 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ('email', 'username', 'password', 'password_confirm', 
+        fields = ('email', 'password', 'password_confirm', 
                   'first_name', 'last_name', 'company', 'job_title')
+        # Removed username from fields since we'll set it automatically
+    
+    def validate_email(self, value):
+        """Validate email is unique"""
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
     
     def validate(self, attrs):
+        """Validate password confirmation"""
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
         return attrs
     
     def create(self, validated_data):
+        """Create user with email as username"""
         validated_data.pop('password_confirm')
+        
+        # Set username to email to satisfy Django's requirements
+        validated_data['username'] = validated_data['email']
+        
         user = User.objects.create_user(**validated_data)
+        
+        # Generate API key for new users
         if hasattr(user, 'generate_api_key'):
-            user.generate_api_key()  # Generate API key for new users
+            user.generate_api_key()
+        
         return user
 
 class SocialAuthTokenSerializer(serializers.Serializer):
@@ -64,7 +86,7 @@ class SocialAuthTokenSerializer(serializers.Serializer):
     access_token = serializers.CharField()
     
     def validate_provider(self, value):
-        allowed_providers = ['google-oauth2', 'github']
+        allowed_providers = ['google-oauth2', 'github', 'microsoft']
         if value not in allowed_providers:
             raise serializers.ValidationError(f"Provider must be one of: {', '.join(allowed_providers)}")
         return value

@@ -1,0 +1,17 @@
+{{ site_name }} - Verify Your Email Address
+
+Hi{% if user.get_full_name %} {{ user.get_full_name }}{% endif %},
+
+Thank you for signing up for {{ site_name }}! To complete your registration and start using our platform, please verify your email address by visiting the following link:
+
+{{ verification_url }}
+
+IMPORTANT: This verification link will expire in 24 hours for security reasons. If you don't verify your email within this time, you'll need to request a new verification email.
+
+If you didn't create an account with {{ site_name }}, you can safely ignore this email.
+
+Thanks,
+The {{ site_name }} Team
+
+---
+This is an automated email. Please do not reply to this message.
