@@ -12,6 +12,23 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
 
+# Prevent content type sniffing
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Enable browser XSS protection (modern browsers ignore this but harmless)
+SECURE_BROWSER_XSS_FILTER = True
+
+# Only allow site to be rendered in frames from the same origin
+X_FRAME_OPTIONS = 'DENY'
+
+# Enforce HTTPS for 1 year
+SECURE_HSTS_SECONDS = 31536000  # 1 year
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+# Referrer policy to protect privacy
+SECURE_REFERRER_POLICY = 'no-referrer-when-downgrade'
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-key-for-development')
 
@@ -49,6 +66,7 @@ INSTALLED_APPS = [
     # social signup
     'social_django',
     'oauth2_provider',
+    'csp',
 ]
 
 MIDDLEWARE = [
@@ -60,6 +78,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'csp.middleware.CSPMiddleware',
 
     # social signup
     'social_django.middleware.SocialAuthExceptionMiddleware',
@@ -189,7 +208,7 @@ CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 60
 
 # AI/ML Settings
-LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'ollama')  # 'openai', 'ollama', etc.
+LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai')  # 'openai', 'ollama', etc.
 
 # OpenAI Settings
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
@@ -278,6 +297,29 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@siteanalyser.
 EMAIL_VERIFICATION_TOKEN_LIFETIME = 24  # hours
 EMAIL_VERIFICATION_MAX_ATTEMPTS = 3  # per hour
 EMAIL_VERIFICATION_BLOCK_DURATION = 1  # hours
+
+# AI Analyzer Configuration
+AI_ANALYZER_ENABLED = bool(os.environ.get('AI_ANALYZER_ENABLED', True))
+
+# ML Models Directory
+ML_MODELS_DIR = os.path.join(BASE_DIR, 'ml_models')
+
+# Threat Intelligence Configuration
+THREAT_INTEL_CACHE_TIMEOUT = int(os.environ.get('THREAT_INTEL_CACHE_TIMEOUT', 86400))  # 24 hours
+THREAT_INTEL_MOCK_ENABLED = bool(os.environ.get('THREAT_INTEL_MOCK_ENABLED', True))
+
+
+CONTENT_SECURITY_POLICY = {
+    'DIRECTIVES': {
+        'default-src': ("'self'",),
+        'script-src': ("'self'",),
+        'style-src': ("'self'",),
+        'img-src': ("'self'",),
+        'object-src': ("'none'",),
+        'base-uri': ("'self'",),
+        'form-action': ("'self'",),
+    }
+}
 
 # Enhanced Logging configuration (FIXED)
 LOGGING = {

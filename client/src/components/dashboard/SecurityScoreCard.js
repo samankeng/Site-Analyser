@@ -1,23 +1,23 @@
 // frontend/src/components/dashboard/SecurityScoreCard.js
 
-import React from 'react';
-import { getScoreColorClass, getSecurityRating } from '../../utils/securityUtils';
+import {
+  getScoreColorClass,
+  getSecurityRating,
+} from "../../utils/securityUtils";
 
 const SecurityScoreCard = ({ score, categories }) => {
   return (
     <div className="card h-100">
       <div className="card-body">
-        <h5 className="card-title">Security Score</h5>
-        
+        <h5 className="card-title">Security Score For Latest Scan</h5>
+
         <div className="text-center my-4">
           <div className={`display-3 ${getScoreColorClass(score)}`}>
             {score}
           </div>
-          <div className="text-muted">
-            {getSecurityRating(score)}
-          </div>
+          <div className="text-muted">{getSecurityRating(score)}</div>
         </div>
-        
+
         {categories && (
           <div className="mt-4">
             <h6>Category Scores</h6>
@@ -27,9 +27,11 @@ const SecurityScoreCard = ({ score, categories }) => {
                   <span className="text-capitalize">{category}</span>
                   <span>{categoryScore}</span>
                 </div>
-                <div className="progress" style={{ height: '6px' }}>
+                <div className="progress" style={{ height: "6px" }}>
                   <div
-                    className={`progress-bar ${getScoreColorClass(categoryScore)}`}
+                    className={`progress-bar ${getScoreColorClass(
+                      categoryScore
+                    )}`}
                     role="progressbar"
                     style={{ width: `${categoryScore}%` }}
                     aria-valuenow={categoryScore}

@@ -174,9 +174,17 @@ class CorsScanner:
                     }
                 })
             
-        except requests.exceptions.RequestException:
-            # Skip this endpoint if we can't connect
-            pass
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed CORS preflight or GET request for {url}: {str(e)}")
+            findings.append({
+                'name': 'CORS Endpoint Timeout/Error',
+                'description': f'Failed to analyze CORS configuration at {url}: {str(e)}',
+                'severity': 'info',
+                'details': {
+                    'url': url,
+                    'error': str(e)
+                }
+            })
         
         return findings
     

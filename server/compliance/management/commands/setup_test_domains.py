@@ -25,6 +25,9 @@ class Command(BaseCommand):
             ('test.com', 'Test domain (if used for testing)'),
             ('localhost', 'Local development domain'),
             ('127.0.0.1', 'Local loopback IP'),
+            ('testphp.vulnweb.com', 'Test site for PHP vulnerabilities'),
+            ('demo.testfire.net', 'Demo site for web application security testing (TestFire Bank)'),
+            ('reqbin.com', 'Online tool for testing and debugging HTTP requests'),
         ]
 
         created_count = 0

@@ -924,3 +924,19 @@ def confirm_password_reset(request):
             {'error': 'Failed to reset password. Please try again.'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_connected_accounts(request):
+    """Return connected social accounts for the logged-in user"""
+    user = request.user
+    providers = ['google-oauth2', 'github', 'microsoft']
+
+    connected = {provider.split('-')[0]: False for provider in providers}
+
+    for profile in user.social_profiles.all():
+        short_name = profile.provider.split('-')[0]  # e.g., "google" from "google-oauth2"
+        if short_name in connected:
+            connected[short_name] = True
+
+    return Response(connected)

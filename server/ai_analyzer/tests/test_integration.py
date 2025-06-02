@@ -2,7 +2,7 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from scanner.models import Scan, ScanResult
-from server.ai_analyzer.services.ai_analysis_new import AIAnalysisService
+from server.ai_analyzer.services.ai_analysis import AIAnalysisService
 from unittest.mock import patch
 
 User = get_user_model()

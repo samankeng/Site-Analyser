@@ -535,26 +535,26 @@ class PDFReportGenerator:
         elements.append(Paragraph("Security Score Explanation", self.subtitle_style))
         
         # Calculate severities for explanation
-        critical_deduction = severity_counts.get('critical', 0) * 20
-        high_deduction = severity_counts.get('high', 0) * 10
-        medium_deduction = severity_counts.get('medium', 0) * 5
-        low_deduction = severity_counts.get('low', 0) * 2
+        critical_deduction = severity_counts.get('critical', 0) * 15
+        high_deduction = severity_counts.get('high', 0) * 8
+        medium_deduction = severity_counts.get('medium', 0) * 4
+        low_deduction = severity_counts.get('low', 0) * 1
         total_deduction = critical_deduction + high_deduction + medium_deduction + low_deduction
         
         explanation_text = f"""
         The security score is calculated based on the number and severity of findings:
-        - Critical issues: -20 points each
-        - High issues: -10 points each
-        - Medium issues: -5 points each
-        - Low issues: -2 points each
+        - Critical issues: -15 points each
+        - High issues: -8 points each
+        - Medium issues: -54 points each
+        - Low issues: -1 points each
         - Informational: No point deduction
         
         Current score components:
         - Base score: 100
-        - Critical issues: {severity_counts.get('critical', 0)} × -20 = {critical_deduction}
-        - High issues: {severity_counts.get('high', 0)} × -10 = {high_deduction}
-        - Medium issues: {severity_counts.get('medium', 0)} × -5 = {medium_deduction}
-        - Low issues: {severity_counts.get('low', 0)} × -2 = {low_deduction}
+        - Critical issues: {severity_counts.get('critical', 0)} × -15 = {critical_deduction}
+        - High issues: {severity_counts.get('high', 0)} × -8 = {high_deduction}
+        - Medium issues: {severity_counts.get('medium', 0)} × -4 = {medium_deduction}
+        - Low issues: {severity_counts.get('low', 0)} × -1 = {low_deduction}
         - Total deduction: {total_deduction}
         
         Final score: {security_score}/100 - {self._get_risk_level_text(security_score)}
@@ -634,10 +634,10 @@ class PDFReportGenerator:
     def _calculate_security_score(self, severity_counts):
         """Calculate security score based on severity counts"""
         severity_weights = {
-            'critical': 20,  # Most severe impact
-            'high': 10,      # Significant risk
-            'medium': 5,     # Moderate concern
-            'low': 2,        # Minor issue
+            'critical': 15,  # Most severe impact
+            'high': 8,      # Significant risk
+            'medium': 4,     # Moderate concern
+            'low': 1,        # Minor issue
             'info': 0        # Informational, no score reduction
         }
         

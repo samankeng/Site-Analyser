@@ -5,8 +5,11 @@ import ssl
 import logging
 from urllib.parse import urlparse
 import datetime
+import time
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 2
 
 class SslScanner:
     """Scanner for SSL/TLS configuration"""
@@ -34,31 +37,53 @@ class SslScanner:
             })
             return findings
         
-        try:
-            # Get SSL certificate info
-            context = ssl.create_default_context()
-            with socket.create_connection((self.hostname, self.port), timeout=10) as sock:
-                with context.wrap_socket(sock, server_hostname=self.hostname) as ssock:
-                    cert = ssock.getpeercert()
-                    cipher = ssock.cipher()
+        # try:
+        #     # Get SSL certificate info
+        #     context = ssl.create_default_context()
+        #     with socket.create_connection((self.hostname, self.port), timeout=10) as sock:
+        #         with context.wrap_socket(sock, server_hostname=self.hostname) as ssock:
+        #             cert = ssock.getpeercert()
+        #             cipher = ssock.cipher()
                     
-                    # Check certificate validity
-                    findings.extend(self._check_certificate_validity(cert))
+        #             # Check certificate validity
+        #             findings.extend(self._check_certificate_validity(cert))
                     
-                    # Check protocol version
-                    findings.extend(self._check_protocol_version(ssock.version()))
+        #             # Check protocol version
+        #             findings.extend(self._check_protocol_version(ssock.version()))
                     
-                    # Check cipher strength
-                    findings.extend(self._check_cipher_strength(cipher))
+        #             # Check cipher strength
+        #             findings.extend(self._check_cipher_strength(cipher))
         
-        except (socket.error, ssl.SSLError, TimeoutError) as e:
-            logger.error(f"Error in SSL scan for {self.url}: {str(e)}")
-            findings.append({
-                'name': 'SSL Connection Error',
-                'description': f'Failed to establish SSL connection to {self.url}: {str(e)}',
-                'severity': 'info',
-                'details': {'error': str(e)}
-            })
+        # except (socket.error, ssl.SSLError, TimeoutError) as e:
+        #     logger.error(f"Error in SSL scan for {self.url}: {str(e)}")
+        #     findings.append({
+        #         'name': 'SSL Connection Error',
+        #         'description': f'Failed to establish SSL connection to {self.url}: {str(e)}',
+        #         'severity': 'info',
+        #         'details': {'error': str(e)}
+        #     })
+        for attempt in range(MAX_RETRIES):
+            try:
+                context = ssl.create_default_context()
+                with socket.create_connection((self.hostname, self.port), timeout=10) as sock:
+                    with context.wrap_socket(sock, server_hostname=self.hostname) as ssock:
+                        cert = ssock.getpeercert()
+                        cipher = ssock.cipher()
+                        findings.extend(self._check_certificate_validity(cert))
+                        findings.extend(self._check_protocol_version(ssock.version()))
+                        findings.extend(self._check_cipher_strength(cipher))
+                        return findings
+            except (socket.error, ssl.SSLError, TimeoutError) as e:
+                logger.warning(f"SSL attempt {attempt+1} failed for {self.hostname}: {str(e)}")
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(1)
+                else:
+                    findings.append({
+                        'name': 'SSL Connection Error',
+                        'description': f'Failed to establish SSL connection to {self.url}: {str(e)}',
+                        'severity': 'info',
+                        'details': {'error': str(e)}
+                    })
         
         return findings
     

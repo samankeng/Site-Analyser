@@ -93,3 +93,7 @@ pytest>=7.4.0
 pytest-django>=4.5.0
 factory-boy>=3.3.0
 coverage>=7.3.0
+
+#csp 
+
+django-csp>=4.0

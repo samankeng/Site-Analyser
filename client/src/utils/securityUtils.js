@@ -7,34 +7,29 @@
  */
 export const calculateSecurityScore = (results) => {
   const severityWeights = {
-    critical: 20, // Most severe impact
-    high: 10, // Significant risk
-    medium: 5, // Moderate concern
-    low: 2, // Minor issue
-    info: 0, // Informational, no score reduction
+    critical: 15,
+    high: 8,
+    medium: 4,
+    low: 1,
+    info: 0,
   };
 
   let severityCounts;
 
-  // Handle different input types
   if (Array.isArray(results)) {
-    // If results are an array of objects, count severities
+    if (results.length === 0) return null; // <== FIX HERE
     severityCounts = results.reduce(
       (counts, result) => {
         const severity = (result.severity || "info").toLowerCase();
         counts[severity] = (counts[severity] || 0) + 1;
         return counts;
       },
-      {
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-        info: 0,
-      }
+      { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
     );
   } else if (typeof results === "object") {
-    // If results are already a count object
+    const totalCount = Object.values(results).reduce((a, b) => a + b, 0);
+    if (totalCount === 0) return null; // <== FIX HERE
+
     severityCounts = {
       critical: results.critical || 0,
       high: results.high || 0,
@@ -43,18 +38,15 @@ export const calculateSecurityScore = (results) => {
       info: results.info || 0,
     };
   } else {
-    // Default to no findings
-    return 100;
+    return null;
   }
 
-  // Calculate total deduction
   const totalDeduction = Object.entries(severityCounts).reduce(
     (total, [severity, count]) =>
       total + count * (severityWeights[severity] || 0),
     0
   );
 
-  // Ensure score doesn't go below 0
   return Math.max(0, 100 - Math.min(100, totalDeduction));
 };
 
@@ -75,29 +67,6 @@ export const getSecurityRating = (score) => {
   return "Critically Insecure";
 };
 
-/**
- * Count findings by severity
- * @param {Array} results - Scan result items
- * @returns {Object} Counts by severity
- */
-// export const countSeverities = (results) => {
-//   const counts = {
-//     'critical': 0,
-//     'high': 0,
-//     'medium': 0,
-//     'low': 0,
-//     'info': 0
-//   };
-
-//   results.forEach(result => {
-//     const severity = (result.severity || 'info').toLowerCase();
-//     if (severity in counts) {
-//       counts[severity]++;
-//     }
-//   });
-
-//   return counts;
-// };
 /**
  * Count findings by severity
  * @param {Array} results - Scan result items

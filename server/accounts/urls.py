@@ -16,6 +16,8 @@ from .views import (
     confirm_password_reset,
 )
 
+from .views import get_connected_accounts
+
 urlpatterns = [
     # Standard auth
     path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -28,13 +30,15 @@ urlpatterns = [
     path('resend-verification/', resend_verification_email, name='resend_verification'),
     
     # Social auth
-    path('social/', include('social_django.urls', namespace='social')),
+    path('social/', include('social_django.urls')),
     path('social/token/', social_auth_token_exchange, name='social_auth_token'),
     path('social/disconnect/', disconnect_social_account, name='social_disconnect'),
+    path('connected-accounts/', get_connected_accounts, name='connected_accounts'),
     
     # Provider-specific OAuth endpoints
     path('github/exchange/', github_token_exchange, name='github_exchange'),
     path('microsoft/exchange/', microsoft_token_exchange, name='microsoft_exchange'),
     path('password-reset/', request_password_reset, name='password_reset'),
     path('password-reset-confirm/', confirm_password_reset, name='password_reset_confirm'),
+
 ]

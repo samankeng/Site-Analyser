@@ -254,11 +254,11 @@ const anomalyService = {
     }
 
     const severityWeights = {
-      critical: 25,
-      high: 15,
-      medium: 8,
-      low: 3,
-      info: 1,
+      critical: 15,
+      high: 8,
+      medium: 4,
+      low: 1,
+      info: 0,
     };
 
     let totalScore = 0;

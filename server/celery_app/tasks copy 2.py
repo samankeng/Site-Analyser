@@ -1,4 +1,4 @@
-# backend/celery_app/tasks.py - Fixed version
+# backend/celery_app/tasks.py - Add automatic AI analysis triggering
 
 from celery import shared_task
 from django.utils import timezone
@@ -45,11 +45,19 @@ def start_passive_scan_task(scan_id):
         if scan.scan_mode not in ['passive', 'mixed']:
             raise ValueError(f"Cannot run passive scan on scan mode: {scan.scan_mode}")
         
-        logger.info(f"Starting passive scan for {scan.target_url} (scan_id: {scan_id})")
+        # Update scan status to in progress
+        scan.status = 'in_progress'
+        scan.started_at = timezone.now()
+        scan.save()
         
-        # Initialize and run the passive scan (PassiveScanService handles its own status updates)
+        # Initialize and run the passive scan
         scanner = PassiveScanService(scan)
         scanner.run()
+        
+        # Complete scan and trigger AI analysis
+        scan.refresh_from_db()
+        if scan.status == 'in_progress':
+            complete_scan_with_ai_analysis(scan)
         
         return {"status": "success", "scan_id": scan_id, "scan_type": "passive"}
     
@@ -84,18 +92,26 @@ def start_active_scan_task(scan_id):
         if scan.scan_mode not in ['active', 'mixed']:
             raise ValueError(f"Cannot run active scan on scan mode: {scan.scan_mode}")
         
-        logger.info(f"Starting active scan for {scan.target_url} (scan_id: {scan_id})")
-        
         # Verify authorization for active scanning using compliance service
         compliance_service = ComplianceService(scan.user)
-        can_scan, reason = compliance_service.can_scan_domain(scan.target_url, 'active')
+        auth_check = compliance_service.check_url_authorization(scan.target_url)
         
-        if not can_scan:
-            raise ValueError(f"Active scanning not authorized for domain: {reason}")
+        if not auth_check.get('scan_capabilities', {}).get('active_enabled', False):
+            raise ValueError(f"Active scanning not authorized for domain: {auth_check.get('reason', 'No authorization')}")
         
-        # Initialize and run the active scan (ActiveScanService handles its own status updates)
+        # Update scan status to in progress
+        scan.status = 'in_progress'
+        scan.started_at = timezone.now()
+        scan.save()
+        
+        # Initialize and run the active scan
         scanner = ActiveScanService(scan, user=scan.user, compliance_mode=scan.compliance_mode)
         scanner.run()
+        
+        # Complete scan and trigger AI analysis
+        scan.refresh_from_db()
+        if scan.status == 'in_progress':
+            complete_scan_with_ai_analysis(scan)
         
         return {"status": "success", "scan_id": scan_id, "scan_type": "active"}
     
@@ -131,8 +147,6 @@ def start_mixed_scan_task(scan_id):
         if scan.scan_mode != 'mixed':
             raise ValueError(f"Cannot run mixed scan on scan mode: {scan.scan_mode}")
         
-        logger.info(f"Starting mixed scan for {scan.target_url} (scan_id: {scan_id})")
-        
         # Update scan status to in progress
         scan.status = 'in_progress'
         scan.started_at = timezone.now()
@@ -141,65 +155,36 @@ def start_mixed_scan_task(scan_id):
         # Run passive scan first (always safe)
         logger.info(f"Starting passive phase of mixed scan {scan_id}")
         passive_scanner = PassiveScanService(scan)
-        
-        # Temporarily override scan mode for passive scanner
-        original_scan_mode = scan.scan_mode
-        try:
-            # Run passive scan - it should handle its own completion but we override it
-            passive_scanner.run()
-            
-            # Don't let passive scanner complete the scan yet
-            scan.refresh_from_db()
-            if scan.status == 'completed':
-                scan.status = 'in_progress'
-                scan.save()
-                
-        except Exception as e:
-            logger.error(f"Error in passive phase of mixed scan {scan_id}: {str(e)}")
-            # Continue to active phase even if passive fails
+        passive_scanner.run()
         
         # Check authorization for active scanning using compliance service
         compliance_service = ComplianceService(scan.user)
-        can_scan, reason = compliance_service.can_scan_domain(scan.target_url, 'active')
+        auth_check = compliance_service.check_url_authorization(scan.target_url)
         
-        if can_scan:
+        if auth_check.get('scan_capabilities', {}).get('active_enabled', False):
             logger.info(f"Starting active phase of mixed scan {scan_id}")
-            try:
-                active_scanner = ActiveScanService(scan, user=scan.user, compliance_mode=scan.compliance_mode)
-                
-                # Temporarily override scan mode for active scanner
-                # Don't let active scanner complete the scan - we'll do it ourselves
-                active_scanner.run()
-                
-                # Don't let active scanner complete the scan yet
-                scan.refresh_from_db()
-                if scan.status == 'completed':
-                    scan.status = 'in_progress'
-                    scan.save()
-                    
-            except Exception as e:
-                logger.error(f"Error in active phase of mixed scan {scan_id}: {str(e)}")
-                # Continue to completion even if active fails
+            active_scanner = ActiveScanService(scan, user=scan.user, compliance_mode=scan.compliance_mode)
+            active_scanner.run()
         else:
-            logger.info(f"Skipping active phase of mixed scan {scan_id} - {reason}")
+            logger.info(f"Skipping active phase of mixed scan {scan_id} - no authorization")
             
             # Add a result explaining why active scan was skipped
             ScanResult.objects.create(
                 scan=scan,
                 category='authorization',
                 name='Active Scan Skipped',
-                description=f'Active testing was skipped: {reason}',
+                description='Active testing was skipped due to lack of authorization for this domain',
                 severity='info',
                 details={
                     'reason': 'no_authorization',
                     'domain': scan.target_url,
                     'recommendation': 'Request domain authorization to enable active testing',
                     'scan_type': 'mixed',
-                    'authorization_reason': reason
+                    'auth_check_result': auth_check
                 }
             )
         
-        # Complete the mixed scan manually
+        # Complete scan and trigger AI analysis
         scan.refresh_from_db()
         if scan.status == 'in_progress':
             complete_scan_with_ai_analysis(scan)
@@ -234,17 +219,17 @@ def start_scan_task(scan_id):
         
         # Redirect to appropriate task based on scan mode
         if scan.scan_mode == 'passive':
-            return start_passive_scan_task(scan_id)  # Call directly, don't use .delay()
+            return start_passive_scan_task.delay(scan_id)
         elif scan.scan_mode == 'active':
-            return start_active_scan_task(scan_id)
+            return start_active_scan_task.delay(scan_id)
         elif scan.scan_mode == 'mixed':
-            return start_mixed_scan_task(scan_id)
+            return start_mixed_scan_task.delay(scan_id)
         else:
             # Default to passive for safety
             logger.warning(f"Unknown scan mode {scan.scan_mode} for scan {scan_id}, defaulting to passive")
             scan.scan_mode = 'passive'
             scan.save()
-            return start_passive_scan_task(scan_id)
+            return start_passive_scan_task.delay(scan_id)
     
     except Exception as e:
         logger.exception(f"Error in legacy scan task {scan_id}: {str(e)}")
@@ -302,7 +287,8 @@ def run_ai_analysis_task(self, scan_id):
 def cleanup_expired_scans():
     """Clean up old scan data based on retention policies"""
     try:
-        from scanner.models import Scan, SecurityAuditLog
+        from scanner.models import Scan
+        from compliance.models import SecurityAuditLog
         from ai_analyzer.models import AIAnalysis
         from datetime import timedelta
         
@@ -338,12 +324,14 @@ def cleanup_expired_scans():
         logger.exception(f"Error in cleanup task: {str(e)}")
         return {"status": "error", "message": str(e)}
 
+# Rest of the tasks remain the same...
 @shared_task
 def generate_compliance_report(user_id, report_type='weekly'):
     """Generate compliance reports for users or administrators"""
     try:
         from django.contrib.auth import get_user_model
-        from scanner.models import Scan, SecurityAuditLog
+        from scanner.models import Scan
+        from compliance.models import SecurityAuditLog, LegalAgreement
         from compliance.services.compliance_service import ComplianceService
         from datetime import timedelta
         import json
