@@ -11,6 +11,8 @@ RUN ls -la
 RUN ls -la public/ || echo "No public folder"
 RUN ls -la src/ || echo "No src folder"
 
+ARG CACHE_BUST=1
+
 # Install dependencies
 RUN npm install
 
