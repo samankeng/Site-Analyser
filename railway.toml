@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "cd server && python manage.py migrate && python manage.py runserver 0.0.0.0:$PORT"
+
+[[services]]
+name = "backend"
+source = "server/"
+
+[[services]]  
+name = "frontend"
+source = "client/"
