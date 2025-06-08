@@ -1,25 +1,21 @@
-# client/Dockerfile
+# client/Dockerfile - With memory optimization
 FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Increase memory limit for Node.js
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Install dependencies (use npm install instead of npm ci)
-RUN npm install --omit=dev
-
-# Copy source code
+# Copy everything
 COPY . .
 
-# Build the app
+# Install dependencies
+RUN npm install
+
+# Build with increased memory
 RUN npm run build
 
-# Install serve
+# Serve
 RUN npm install -g serve
-
-# Expose port
 EXPOSE 3000
-
-# Start the app
 CMD ["serve", "-s", "build", "-l", "3000"]
