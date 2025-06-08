@@ -376,7 +376,7 @@ grafana/
 # Generated reports
 reports/generated/
 *.pdf
-*.html
+#*.html
 scan_results/
 vulnerability_reports/
 
