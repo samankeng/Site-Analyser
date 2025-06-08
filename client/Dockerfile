@@ -18,7 +18,7 @@ RUN npm install
 RUN echo "=== Package.json scripts ===" && cat package.json | grep -A 10 '"scripts"'
 
 # Debug: Try to build with verbose output
-RUN npm run build 2>&1 || (echo "Build failed, showing more details:" && npm run build --verbose 2>&1)
+RUN npm run build --verbose
 
 # If build succeeds, continue
 RUN npm install -g serve
