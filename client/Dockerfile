@@ -1,32 +1,25 @@
-# client/Dockerfile - Secure version for Railway
-FROM node:18-alpine3.18
-
-# Create app directory and non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
+# client/Dockerfile
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files with proper ownership
-COPY --chown=nextjs:nodejs package*.json ./
+# Copy package files
+COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install dependencies (use npm install instead of npm ci)
+RUN npm install --omit=dev
 
-# Copy source code with proper ownership
-COPY --chown=nextjs:nodejs . .
+# Copy source code
+COPY . .
 
-# Build the React app
+# Build the app
 RUN npm run build
 
-# Install serve to serve static files
-RUN npm install -g serve@14
-
-# Switch to non-root user
-USER nextjs
+# Install serve
+RUN npm install -g serve
 
 # Expose port
 EXPOSE 3000
 
-# Serve the built app
+# Start the app
 CMD ["serve", "-s", "build", "-l", "3000"]
