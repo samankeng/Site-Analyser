@@ -57,7 +57,7 @@ INSTALLED_APPS = [
     # Local apps
     'accounts',
     'scanner',
-    'reports',
+    #'reports',
     'alerts',
     'ai_analyzer',
     'api',

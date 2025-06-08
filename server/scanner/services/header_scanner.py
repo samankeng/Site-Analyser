@@ -1,143 +1,81 @@
-# backend/scanner/services/header_scanner.py
 
 import requests
 import logging
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
 class HeaderScanner:
-    """Scanner for HTTP security headers"""
-    
-    def __init__(self, url):
+    def __init__(self, url, max_pages_to_scan=10):
         self.url = url
+        self.max_pages_to_scan = max_pages_to_scan
+        self.visited_urls = set()
         self.headers = {
-            'User-Agent': 'Site-Analyser Security Scanner/1.0'
+            'User-Agent': 'Site-Analyser Header Scanner/1.0'
         }
-    
+
     def scan(self):
-        """Scan the target URL for security headers"""
-        try:
-            findings = []
-            
-            # Make request to target URL
-            response = requests.get(self.url, headers=self.headers, timeout=10, verify=True)
-            headers = response.headers
-            
-            # Check for security headers
-            findings.extend(self._check_content_security_policy(headers))
-            findings.extend(self._check_strict_transport_security(headers))
-            findings.extend(self._check_x_content_type_options(headers))
-            findings.extend(self._check_x_frame_options(headers))
-            findings.extend(self._check_referrer_policy(headers))
-            findings.extend(self._check_permissions_policy(headers))
-            
-            return findings
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error scanning headers for {self.url}: {str(e)}")
-            return [{
-                'name': 'Connection Error',
-                'description': f'Failed to connect to {self.url}: {str(e)}',
-                'severity': 'info',
-                'details': {'error': str(e)}
-            }]
-    
-    def _check_content_security_policy(self, headers):
         findings = []
-        
-        if 'Content-Security-Policy' not in headers:
-            findings.append({
-                'name': 'Missing Content-Security-Policy Header',
-                'description': 'The Content-Security-Policy header is missing. This header helps prevent Cross-Site Scripting (XSS) and data injection attacks.',
-                'severity': 'medium',
-                'details': {
-                    'recommendation': "Add a Content-Security-Policy header to restrict sources of content.",
-                    'example': "Content-Security-Policy: default-src 'self'"
-                }
-            })
-        
-        return findings
-    
-    def _check_strict_transport_security(self, headers):
-        findings = []
-        
-        # Check if site is HTTPS
-        parsed_url = urlparse(self.url)
-        if parsed_url.scheme == 'https':
-            if 'Strict-Transport-Security' not in headers:
+        urls_to_scan = [self.url]
+
+        while urls_to_scan and len(self.visited_urls) < self.max_pages_to_scan:
+            page_url = urls_to_scan.pop(0)
+            if page_url in self.visited_urls:
+                continue
+
+            try:
+                response = requests.get(page_url, headers=self.headers, timeout=10)
+                if response.status_code != 200:
+                    continue
+
+                self.visited_urls.add(page_url)
+                findings.extend(self._check_security_headers(response.headers, page_url))
+
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for link in soup.find_all('a', href=True):
+                    href = link['href']
+                    if not href.startswith('#'):
+                        full_url = urljoin(page_url, href)
+                        if self._is_internal_url(full_url) and full_url not in self.visited_urls:
+                            urls_to_scan.append(full_url)
+
+            except requests.RequestException as e:
+                logger.warning(f"Header scan request failed for {page_url}: {e}")
                 findings.append({
-                    'name': 'Missing Strict-Transport-Security Header',
-                    'description': 'The HTTP Strict-Transport-Security header is missing. This header informs browsers to only use HTTPS, protecting against protocol downgrade attacks.',
-                    'severity': 'medium',
+                    'name': 'Header Scan Connection Error',
+                    'description': str(e),
+                    'severity': 'info',
                     'details': {
-                        'recommendation': "Add a Strict-Transport-Security header for HTTPS enforcement.",
-                        'example': "Strict-Transport-Security: max-age=31536000; includeSubDomains"
+                        'error': str(e),
+                        'page_url': page_url
                     }
                 })
-        
+
         return findings
-    
-    def _check_x_content_type_options(self, headers):
+
+    def _is_internal_url(self, url):
+        return urlparse(url).netloc == urlparse(self.url).netloc
+
+    def _check_security_headers(self, headers, page_url):
         findings = []
-        
-        if 'X-Content-Type-Options' not in headers:
-            findings.append({
-                'name': 'Missing X-Content-Type-Options Header',
-                'description': 'The X-Content-Type-Options header is missing. This header prevents browsers from MIME-sniffing a response away from the declared content-type.',
-                'severity': 'low',
-                'details': {
-                    'recommendation': "Add the X-Content-Type-Options header with value 'nosniff'.",
-                    'example': "X-Content-Type-Options: nosniff"
-                }
-            })
-        
-        return findings
-    
-    def _check_x_frame_options(self, headers):
-        findings = []
-        
-        if 'X-Frame-Options' not in headers:
-            findings.append({
-                'name': 'Missing X-Frame-Options Header',
-                'description': 'The X-Frame-Options header is missing. This header protects against clickjacking attacks by preventing your page from being embedded in an iframe.',
-                'severity': 'medium',
-                'details': {
-                    'recommendation': "Add the X-Frame-Options header with value 'DENY' or 'SAMEORIGIN'.",
-                    'example': "X-Frame-Options: SAMEORIGIN"
-                }
-            })
-        
-        return findings
-    
-    def _check_referrer_policy(self, headers):
-        findings = []
-        
-        if 'Referrer-Policy' not in headers:
-            findings.append({
-                'name': 'Missing Referrer-Policy Header',
-                'description': 'The Referrer-Policy header is missing. This header controls how much referrer information should be included with requests.',
-                'severity': 'low',
-                'details': {
-                    'recommendation': "Add a Referrer-Policy header to control referrer information.",
-                    'example': "Referrer-Policy: strict-origin-when-cross-origin"
-                }
-            })
-        
-        return findings
-    
-    def _check_permissions_policy(self, headers):
-        findings = []
-        
-        if 'Permissions-Policy' not in headers and 'Feature-Policy' not in headers:
-            findings.append({
-                'name': 'Missing Permissions-Policy Header',
-                'description': 'The Permissions-Policy header is missing. This header allows a site to control which features and APIs can be used in the browser.',
-                'severity': 'low',
-                'details': {
-                    'recommendation': "Add a Permissions-Policy header to control browser feature usage.",
-                    'example': "Permissions-Policy: camera=(), microphone=(), geolocation=()"
-                }
-            })
-        
+        required_headers = {
+            'Strict-Transport-Security': 'Enforce secure connections (HSTS)',
+            'Content-Security-Policy': 'Prevent XSS and content injection',
+            'X-Content-Type-Options': 'Prevent MIME-type sniffing',
+            'X-Frame-Options': 'Prevent clickjacking',
+            'X-XSS-Protection': 'Enable XSS filtering'
+        }
+
+        for header, recommendation in required_headers.items():
+            if header not in headers:
+                findings.append({
+                    'name': f'Missing Security Header: {header}',
+                    'description': f'The {header} header is missing.',
+                    'severity': 'medium',
+                    'details': {
+                        'recommendation': recommendation,
+                        'page_url': page_url
+                    }
+                })
         return findings

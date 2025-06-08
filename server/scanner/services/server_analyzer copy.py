@@ -31,24 +31,24 @@ class ServerAnalyzer:
             response = requests.get(self.url, headers=self.headers, timeout=10)
             
             # Check HTTP response headers
-            header_findings = self._check_server_headers(response.headers, self.url)
+            header_findings = self._check_server_headers(response.headers)
             findings.extend(header_findings)
             
             # Check HTML content for server information
-            html_findings = self._check_html_comments(response.text, self.url)
+            html_findings = self._check_html_comments(response.text)
             findings.extend(html_findings)
             
             # Check DNS records
-            dns_findings = self._check_dns_records(self.url)
+            dns_findings = self._check_dns_records()
             findings.extend(dns_findings)
             
             # Check TLS/SSL configuration
             if urlparse(self.url).scheme == 'https':
-                ssl_findings = self._check_ssl_configuration(self.url)
+                ssl_findings = self._check_ssl_configuration()
                 findings.extend(ssl_findings)
             
             # Check for server software version detection
-            version_findings = self._detect_server_version(response.headers, response.text, self.url)
+            version_findings = self._detect_server_version(response.headers, response.text)
             findings.extend(version_findings)
             
         except requests.exceptions.RequestException as e:
@@ -66,7 +66,7 @@ class ServerAnalyzer:
         
         return findings
     
-    def _check_server_headers(self, headers, page_url):
+    def _check_server_headers(self, headers):
         """Analyze server headers for information disclosure"""
         findings = []
         
@@ -80,7 +80,7 @@ class ServerAnalyzer:
                 'details': {
                     'header_name': 'Server',
                     'header_value': server_header,
-                    'page_url': page_url,
+                    'page_url': self.url,
                     'impact': 'The Server header discloses information about the web server software and version, which can help attackers target known vulnerabilities.',
                     'recommendation': 'Configure the web server to remove or minimize information in the Server header.'
                 }
@@ -96,7 +96,7 @@ class ServerAnalyzer:
                 'details': {
                     'header_name': 'X-Powered-By',
                     'header_value': powered_by,
-                    'page_url': page_url,
+                    'page_url': self.url,
                     'impact': 'The X-Powered-By header discloses information about the technology stack, which can help attackers target known vulnerabilities.',
                     'recommendation': 'Configure the application to remove the X-Powered-By header.'
                 }
@@ -118,7 +118,7 @@ class ServerAnalyzer:
                     'details': {
                         'header_name': header,
                         'header_value': headers[header],
-                        'page_url': page_url,
+                        'page_url': self.url,
                         'impact': f'The {header} header discloses information about the technology stack or configuration, which can help attackers.',
                         'recommendation': f'Configure the application to remove the {header} header.'
                     }
@@ -144,7 +144,7 @@ class ServerAnalyzer:
                     'details': {
                         'missing_header': header,
                         'description': description,
-                        'page_url': page_url,
+                        'page_url': self.url,
                         'impact': f'Without the {header} header, the site may be vulnerable to certain types of attacks.',
                         'recommendation': f'Implement the {header} header with appropriate values.'
                     }
@@ -152,7 +152,7 @@ class ServerAnalyzer:
         
         return findings
     
-    def _check_html_comments(self, html_content, page_url):
+    def _check_html_comments(self, html_content):
         """Check HTML comments for information disclosure"""
         findings = []
         
@@ -209,7 +209,7 @@ class ServerAnalyzer:
                 'severity': 'medium',
                 'details': {
                     'sensitive_comments': sensitive_comments,
-                    'page_url': page_url,
+                    'page_url': self.url,
                     'impact': 'HTML comments may reveal sensitive information about the application structure, technology, or configuration.',
                     'recommendation': 'Remove sensitive information from HTML comments in production code.'
                 }
@@ -217,7 +217,7 @@ class ServerAnalyzer:
         
         return findings
     
-    def _check_dns_records(self, page_url):
+    def _check_dns_records(self):
         """Check DNS records for information disclosure"""
         findings = []
         
@@ -234,7 +234,7 @@ class ServerAnalyzer:
                     'details': {
                         'hostname': self.hostname,
                         'ip_addresses': ip_addresses,
-                        'page_url': page_url,
+                        'page_url': self.url,
                         'impact': 'Load balancing information can be useful for understanding the infrastructure.',
                         'recommendation': 'This is informational and not necessarily a security issue.'
                     }
@@ -250,7 +250,7 @@ class ServerAnalyzer:
                     'details': {
                         'hostname': self.hostname,
                         'internal_ips': internal_ips,
-                        'page_url': page_url,
+                        'page_url': self.url,
                         'impact': 'Exposing internal IP addresses may reveal information about the internal network structure.',
                         'recommendation': 'Configure DNS to avoid exposing internal IP addresses publicly.'
                     }
@@ -286,7 +286,7 @@ class ServerAnalyzer:
             
         return False
     
-    def _check_ssl_configuration(self, page_url):
+    def _check_ssl_configuration(self):
         """Check for SSL/TLS configuration details"""
         findings = []
         
@@ -310,7 +310,7 @@ class ServerAnalyzer:
                                 'hostname': self.hostname,
                                 'certificate_subject': str(cert.get('subject', [])),
                                 'certificate_issuer': str(cert.get('issuer', [])),
-                                'page_url': page_url,
+                                'page_url': self.url,
                                 'impact': 'Self-signed certificates are not trusted by browsers and can lead to security warnings.',
                                 'recommendation': 'Use certificates issued by trusted certification authorities.'
                             }
@@ -326,7 +326,7 @@ class ServerAnalyzer:
                             'details': {
                                 'hostname': self.hostname,
                                 'issuer': issuer,
-                                'page_url': page_url,
+                                'page_url': self.url,
                                 'impact': 'Certificates from untrusted or suspicious issuers may indicate security risks.',
                                 'recommendation': 'Use certificates from well-known, trusted certification authorities.'
                             }
@@ -341,7 +341,7 @@ class ServerAnalyzer:
                             'details': {
                                 'hostname': self.hostname,
                                 'protocol': protocol,
-                                'page_url': page_url,
+                                'page_url': self.url,
                                 'impact': 'Outdated SSL/TLS protocols have known vulnerabilities that can be exploited.',
                                 'recommendation': 'Configure the server to use only TLSv1.2 and TLSv1.3.'
                             }
@@ -357,14 +357,14 @@ class ServerAnalyzer:
                             'details': {
                                 'hostname': self.hostname,
                                 'cipher_suite': cipher[0],
-                                'page_url': page_url,
+                                'page_url': self.url,
                                 'impact': 'Weak cipher suites can be vulnerable to various attacks.',
                                 'recommendation': 'Configure the server to use only strong cipher suites.'
                             }
                         })
                     
                     # Check certificate expiration
-                    expiry_issues = self._check_certificate_expiration(cert, page_url)
+                    expiry_issues = self._check_certificate_expiration(cert)
                     findings.extend(expiry_issues)
         
         except (socket.error, ssl.SSLError) as e:
@@ -459,7 +459,7 @@ class ServerAnalyzer:
         
         return any(keyword in cipher_name for keyword in weak_keywords)
     
-    def _check_certificate_expiration(self, cert, page_url):
+    def _check_certificate_expiration(self, cert):
         """Check certificate expiration date"""
         findings = []
         
@@ -479,7 +479,7 @@ class ServerAnalyzer:
                 'details': {
                     'expiry_date': cert['notAfter'],
                     'days_since_expiry': abs(days_until_expiry),
-                    'page_url': page_url,
+                    'page_url': self.url,
                     'impact': 'Expired certificates will trigger security warnings in browsers and may prevent users from accessing the site.',
                     'recommendation': 'Renew the SSL certificate immediately.'
                 }
@@ -492,7 +492,7 @@ class ServerAnalyzer:
                 'details': {
                     'expiry_date': cert['notAfter'],
                     'days_until_expiry': days_until_expiry,
-                    'page_url': page_url,
+                    'page_url': self.url,
                     'impact': 'Certificates that expire soon will trigger security warnings if not renewed in time.',
                     'recommendation': 'Renew the SSL certificate before it expires.'
                 }
@@ -500,7 +500,7 @@ class ServerAnalyzer:
         
         return findings
     
-    def _detect_server_version(self, headers, html_content, page_url):
+    def _detect_server_version(self, headers, html_content):
         """Detect server software and version from headers and content"""
         findings = []
         
@@ -577,7 +577,7 @@ class ServerAnalyzer:
                         'header': server['header'],
                         'is_vulnerable': is_vulnerable,
                         'vulnerability_description': vulnerability_description,
-                        'page_url': page_url,
+                        'page_url': self.url,
                         'impact': 'Disclosing server version information helps attackers identify vulnerable software versions.',
                         'recommendation': f'Configure {server["name"]} to hide version information in HTTP headers.'
                     }
@@ -625,7 +625,7 @@ class ServerAnalyzer:
                             'cms': cms['name'],
                             'version': version,
                             'detection_pattern': pattern,
-                            'page_url': page_url,
+                            'page_url': self.url,
                             'impact': 'CMS detection allows attackers to target known vulnerabilities in the platform.',
                             'recommendation': 'Hide CMS information and keep the CMS updated to the latest version.'
                         }

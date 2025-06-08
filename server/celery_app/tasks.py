@@ -1,4 +1,4 @@
-# backend/celery_app/tasks.py - Fixed version
+# backend/celery_app/tasks.py - COMPLETE FINAL VERSION
 
 from celery import shared_task
 from django.utils import timezone
@@ -9,7 +9,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 def complete_scan_with_ai_analysis(scan):
-    """Helper function to complete scan and trigger AI analysis"""
+    """Helper function to complete scan and trigger AI analysis (no report creation)"""
     try:
         # Update scan status
         scan.status = 'completed'
@@ -29,6 +29,12 @@ def complete_scan_with_ai_analysis(scan):
         scan.error_message = str(e)
         scan.completed_at = timezone.now()
         scan.save()
+
+# Keep the old function name for backward compatibility but remove report creation
+def complete_scan_with_ai_analysis_and_report(scan):
+    """Legacy function name - now just calls complete_scan_with_ai_analysis"""
+    logger.warning("complete_scan_with_ai_analysis_and_report is deprecated, use complete_scan_with_ai_analysis")
+    return complete_scan_with_ai_analysis(scan)
 
 @shared_task
 def start_passive_scan_task(scan_id):
@@ -68,7 +74,7 @@ def start_passive_scan_task(scan_id):
         
         return {"status": "error", "message": str(e), "scan_type": "passive"}
 
-@shared_task
+@shared_task(time_limit=600, soft_time_limit=540)
 def start_active_scan_task(scan_id):
     """Celery task to run an active scan asynchronously"""
     try:
@@ -114,15 +120,175 @@ def start_active_scan_task(scan_id):
         
         return {"status": "error", "message": str(e), "scan_type": "active"}
 
-@shared_task
+class MixedScanOrchestrator:
+    """Helper class to properly orchestrate mixed scans without duplicates"""
+    
+    def __init__(self, scan):
+        self.scan = scan
+        self.passive_results_count = 0
+        self.active_results_count = 0
+        
+        # Define which scan types are passive vs active
+        self.passive_scan_types = {
+            'headers', 'ssl', 'content', 'csp', 'cookies', 
+            'cors', 'server', 'ports'
+        }
+        self.active_scan_types = {'vulnerabilities'}
+    
+    def run_mixed_scan(self):
+        """Run mixed scan with proper orchestration"""
+        logger.info(f"Starting mixed scan orchestration for {self.scan.target_url}")
+        
+        # Update scan status to in progress
+        self.scan.status = 'in_progress'
+        self.scan.started_at = timezone.now()
+        self.scan.save()
+        
+        # Separate scan types
+        requested_passive = [st for st in self.scan.scan_types if st in self.passive_scan_types]
+        requested_active = [st for st in self.scan.scan_types if st in self.active_scan_types]
+        
+        logger.info(f"Mixed scan breakdown - Passive: {requested_passive}, Active: {requested_active}")
+        
+        # Phase 1: Run passive scans with limited scope
+        if requested_passive:
+            self._run_passive_phase(requested_passive)
+        
+        # Phase 2: Run active scans if authorized
+        if requested_active:
+            self._run_active_phase(requested_active)
+        else:
+            logger.info("No active scan types requested")
+        
+        # Phase 3: Complete the scan
+        self._complete_mixed_scan()
+    
+    def _run_passive_phase(self, passive_types):
+        """Run passive scanning phase"""
+        try:
+            from scanner.services.passive_scanner import PassiveScanService
+            
+            logger.info(f"Starting passive phase with types: {passive_types}")
+            
+            # Temporarily modify the scan's scan_types for this phase
+            original_scan_types = self.scan.scan_types
+            self.scan.scan_types = passive_types
+            
+            try:
+                # Run passive scanner but don't let it auto-complete the scan
+                passive_scanner = PassiveScanService(self.scan, auto_complete=False)
+                passive_scanner.run()
+            finally:
+                # Restore original scan types
+                self.scan.scan_types = original_scan_types
+            
+            # Count results from passive phase
+            from scanner.models import ScanResult
+            self.passive_results_count = ScanResult.objects.filter(
+                scan=self.scan,
+                category__in=passive_types
+            ).count()
+            
+            logger.info(f"Passive phase completed with {self.passive_results_count} results")
+            
+        except Exception as e:
+            logger.error(f"Error in passive phase: {str(e)}")
+            # Continue to active phase even if passive fails
+    
+    def _run_active_phase(self, active_types):
+        """Run active scanning phase"""
+        try:
+            from scanner.services.active_scanner import ActiveScanService
+            from compliance.services.compliance_service import ComplianceService
+            from scanner.models import ScanResult
+            
+            # Check authorization
+            compliance_service = ComplianceService(self.scan.user)
+            can_scan, reason = compliance_service.can_scan_domain(self.scan.target_url, 'active')
+            
+            if not can_scan:
+                logger.info(f"Skipping active phase - {reason}")
+                
+                # Add informational result about skipped active scan
+                ScanResult.objects.create(
+                    scan=self.scan,
+                    category='authorization',
+                    name='Active Scan Authorization Required',
+                    description=f'Active testing was skipped: {reason}',
+                    severity='info',
+                    details={
+                        'reason': 'no_authorization',
+                        'domain': self.scan.target_url,
+                        'recommendation': 'Request domain authorization to enable active testing',
+                        'scan_type': 'mixed',
+                        'authorization_reason': reason,
+                        'scan_id': str(self.scan.id),
+                        'target_url': self.scan.target_url,
+                        'found_at': timezone.now().isoformat()
+                    }
+                )
+                return
+            
+            logger.info(f"Starting active phase with types: {active_types}")
+            
+            # Temporarily modify the scan's scan_types for this phase
+            original_scan_types = self.scan.scan_types
+            self.scan.scan_types = active_types
+            
+            try:
+                # Run active scanner with rate limiting skipped for mixed scans
+                active_scanner = ActiveScanService(
+                    self.scan, 
+                    user=self.scan.user, 
+                    compliance_mode=getattr(self.scan, 'compliance_mode', 'strict'),
+                    auto_complete=False,
+                    skip_rate_limiting=True  # Skip rate limiting for mixed scans
+                )
+                active_scanner.run()
+            finally:
+                # Restore original scan types
+                self.scan.scan_types = original_scan_types
+            
+            # Count results from active phase
+            self.active_results_count = ScanResult.objects.filter(
+                scan=self.scan,
+                category__in=[f"active_{at}" for at in active_types]  # Active results are prefixed
+            ).count()
+            
+            logger.info(f"Active phase completed with {self.active_results_count} results")
+            
+        except Exception as e:
+            logger.error(f"Error in active phase: {str(e)}")
+            # Continue to completion even if active fails
+    
+    def _complete_mixed_scan(self):
+        """Complete the mixed scan properly"""
+        try:
+            # Refresh scan from database to get latest state
+            self.scan.refresh_from_db()
+            
+            # Only complete if still in progress
+            if self.scan.status == 'in_progress':
+                logger.info(f"Completing mixed scan {self.scan.id} - Passive results: {self.passive_results_count}, Active results: {self.active_results_count}")
+                
+                # Use the centralized completion logic
+                complete_scan_with_ai_analysis(self.scan)
+            else:
+                logger.warning(f"Mixed scan {self.scan.id} status is {self.scan.status}, not completing")
+                
+        except Exception as e:
+            logger.exception(f"Error completing mixed scan {self.scan.id}: {str(e)}")
+            self.scan.status = 'failed'
+            self.scan.error_message = str(e)
+            self.scan.completed_at = timezone.now()
+            self.scan.save()
+
+@shared_task(time_limit=600, soft_time_limit=540)
 def start_mixed_scan_task(scan_id):
-    """Celery task to run a mixed scan (passive + active) asynchronously"""
+    """Celery task to run a mixed scan (passive + active) asynchronously - FINAL VERSION"""
     try:
         # Lazy import to avoid circular imports
-        from scanner.models import Scan, ScanResult
-        from scanner.services.passive_scanner import PassiveScanService
-        from scanner.services.active_scanner import ActiveScanService
-        from compliance.services.compliance_service import ComplianceService
+        from scanner.models import Scan
         
         # Get the scan object
         scan = Scan.objects.get(id=scan_id)
@@ -131,80 +297,19 @@ def start_mixed_scan_task(scan_id):
         if scan.scan_mode != 'mixed':
             raise ValueError(f"Cannot run mixed scan on scan mode: {scan.scan_mode}")
         
-        logger.info(f"Starting mixed scan for {scan.target_url} (scan_id: {scan_id})")
+        logger.info(f"Starting mixed scan orchestration for {scan.target_url} (scan_id: {scan_id})")
         
-        # Update scan status to in progress
-        scan.status = 'in_progress'
-        scan.started_at = timezone.now()
-        scan.save()
+        # Use the orchestrator to properly manage the mixed scan
+        orchestrator = MixedScanOrchestrator(scan)
+        orchestrator.run_mixed_scan()
         
-        # Run passive scan first (always safe)
-        logger.info(f"Starting passive phase of mixed scan {scan_id}")
-        passive_scanner = PassiveScanService(scan)
-        
-        # Temporarily override scan mode for passive scanner
-        original_scan_mode = scan.scan_mode
-        try:
-            # Run passive scan - it should handle its own completion but we override it
-            passive_scanner.run()
-            
-            # Don't let passive scanner complete the scan yet
-            scan.refresh_from_db()
-            if scan.status == 'completed':
-                scan.status = 'in_progress'
-                scan.save()
-                
-        except Exception as e:
-            logger.error(f"Error in passive phase of mixed scan {scan_id}: {str(e)}")
-            # Continue to active phase even if passive fails
-        
-        # Check authorization for active scanning using compliance service
-        compliance_service = ComplianceService(scan.user)
-        can_scan, reason = compliance_service.can_scan_domain(scan.target_url, 'active')
-        
-        if can_scan:
-            logger.info(f"Starting active phase of mixed scan {scan_id}")
-            try:
-                active_scanner = ActiveScanService(scan, user=scan.user, compliance_mode=scan.compliance_mode)
-                
-                # Temporarily override scan mode for active scanner
-                # Don't let active scanner complete the scan - we'll do it ourselves
-                active_scanner.run()
-                
-                # Don't let active scanner complete the scan yet
-                scan.refresh_from_db()
-                if scan.status == 'completed':
-                    scan.status = 'in_progress'
-                    scan.save()
-                    
-            except Exception as e:
-                logger.error(f"Error in active phase of mixed scan {scan_id}: {str(e)}")
-                # Continue to completion even if active fails
-        else:
-            logger.info(f"Skipping active phase of mixed scan {scan_id} - {reason}")
-            
-            # Add a result explaining why active scan was skipped
-            ScanResult.objects.create(
-                scan=scan,
-                category='authorization',
-                name='Active Scan Skipped',
-                description=f'Active testing was skipped: {reason}',
-                severity='info',
-                details={
-                    'reason': 'no_authorization',
-                    'domain': scan.target_url,
-                    'recommendation': 'Request domain authorization to enable active testing',
-                    'scan_type': 'mixed',
-                    'authorization_reason': reason
-                }
-            )
-        
-        # Complete the mixed scan manually
-        scan.refresh_from_db()
-        if scan.status == 'in_progress':
-            complete_scan_with_ai_analysis(scan)
-        
-        return {"status": "success", "scan_id": scan_id, "scan_type": "mixed"}
+        return {
+            "status": "success", 
+            "scan_id": scan_id, 
+            "scan_type": "mixed",
+            "passive_results": orchestrator.passive_results_count,
+            "active_results": orchestrator.active_results_count
+        }
     
     except Exception as e:
         logger.exception(f"Error running mixed scan {scan_id}: {str(e)}")
@@ -429,4 +534,98 @@ def generate_compliance_report(user_id, report_type='weekly'):
     
     except Exception as e:
         logger.exception(f"Error generating compliance report: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+@shared_task
+def generate_pdf_report_task(scan_id, user_id):
+    """Celery task to generate PDF report asynchronously (optional for large reports)"""
+    try:
+        from scanner.models import Scan, ScanResult
+        from scanner.services.pdf_report_generator import PDFReportGenerator
+        from django.contrib.auth import get_user_model
+        import tempfile
+        import os
+        
+        User = get_user_model()
+        user = User.objects.get(id=user_id)
+        scan = Scan.objects.get(id=scan_id, user=user)
+        
+        if scan.status != 'completed':
+            raise ValueError("Cannot generate PDF for incomplete scan")
+        
+        logger.info(f"Generating PDF report for scan {scan_id}")
+        
+        # Get scan results
+        results = ScanResult.objects.filter(scan=scan).order_by('severity')
+        
+        # Generate the PDF report
+        report_generator = PDFReportGenerator(scan, results)
+        pdf_data = report_generator.generate_pdf()
+        
+        # For now, just return success - you could extend this to:
+        # - Save PDF to file storage (S3, local storage)
+        # - Email PDF to user
+        # - Store PDF reference in database
+        # - etc.
+        
+        logger.info(f"PDF report generated successfully for scan {scan_id}, size: {len(pdf_data)} bytes")
+        
+        return {
+            "status": "success",
+            "scan_id": scan_id,
+            "user_id": user_id,
+            "pdf_size": len(pdf_data)
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error generating PDF report for scan {scan_id}: {str(e)}")
+        return {"status": "error", "message": str(e), "scan_id": scan_id}
+
+@shared_task
+def clear_domain_rate_limit_task(domain_or_url):
+    """Celery task to clear rate limiting for a specific domain"""
+    try:
+        from urllib.parse import urlparse
+        from django.core.cache import cache
+        
+        # Extract domain from URL if needed
+        if domain_or_url.startswith('http'):
+            domain = urlparse(domain_or_url).netloc
+        else:
+            domain = domain_or_url
+        
+        # Clear the rate limit cache
+        cache_key = f"scanner_rate_limit_{domain}"
+        cache.delete(cache_key)
+        
+        logger.info(f"Cleared rate limit cache for domain: {domain}")
+        
+        return {
+            "status": "success",
+            "domain": domain,
+            "message": f"Rate limit cleared for {domain}"
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error clearing rate limit for {domain_or_url}: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+@shared_task  
+def clear_all_rate_limits_task():
+    """Celery task to clear all rate limiting (admin only)"""
+    try:
+        from django.core.cache import cache
+        
+        # This clears all cache - use with caution
+        cache.clear()
+        
+        logger.info("Cleared all cache including rate limits")
+        
+        return {
+            "status": "success",
+            "message": "All rate limits cleared"
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error clearing all rate limits: {str(e)}")
         return {"status": "error", "message": str(e)}

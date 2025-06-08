@@ -36,6 +36,11 @@ import AdminAuthorizationPanel from "./components/admin/AdminAuthorizationPanel"
 import AdminRoute from "./components/common/AdminRoute";
 import CompliancePage from "./pages/compliance/Compliance";
 
+import ApiReference from "./pages/docs/ApiReference";
+import Documentation from "./pages/docs/Documentation";
+import PrivacyPolicy from "./pages/docs/PrivacyPolicy";
+import TermsOfService from "./pages/docs/TermsOfService";
+
 import "./App.css";
 
 // Protected auth routes component (redirects to dashboard if authenticated)
@@ -146,6 +151,10 @@ function AppContent() {
               path="/compliance/authorizations"
               element={<DomainAuthorizations />}
             />
+            <Route path="/docs" element={<Documentation />} />
+            <Route path="/api-reference" element={<ApiReference />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
             <Route path="/auth/forgot-password" element={<ForgotPassword />} />
             <Route path="/auth/reset-password" element={<ResetPassword />} />
             {/* OAuth callback routes */}

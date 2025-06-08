@@ -1,4 +1,4 @@
-# backend/scanner/services/passive_scanner.py
+# backend/scanner/services/passive_scanner.py - FINAL VERSION
 
 import logging
 from django.utils import timezone
@@ -21,10 +21,11 @@ class PassiveScanService:
     Safe to run on any website without authorization concerns.
     """
     
-    def __init__(self, scan):
+    def __init__(self, scan, auto_complete=True):
         self.scan = scan
         self.target_url = scan.target_url
         self.scan_types = scan.scan_types
+        self.auto_complete = auto_complete  # New parameter to control auto-completion
         
         # Initialize passive scanners only
         self.passive_scanners = {
@@ -41,13 +42,15 @@ class PassiveScanService:
     
     def run(self):
         """Run passive security scanning only"""
-        logger.info(f"Starting passive scan for {self.target_url} with types: {self.scan_types}")
+        logger.info(f"Starting passive scan for {self.target_url} with types: {self.scan_types} (auto_complete: {self.auto_complete})")
         
         try:
             # Update scan status to in_progress and set started timestamp
-            self.scan.status = 'in_progress'
-            self.scan.started_at = timezone.now()
-            self.scan.save()
+            # Only do this if we're auto-completing (not part of mixed scan)
+            if self.auto_complete:
+                self.scan.status = 'in_progress'
+                self.scan.started_at = timezone.now()
+                self.scan.save()
             
             # Run each requested passive scanner
             for scan_type in self.scan_types:
@@ -56,26 +59,35 @@ class PassiveScanService:
                 else:
                     logger.warning(f"Unknown passive scan type: {scan_type}")
             
-            # Check if the scan was cancelled
-            scan = Scan.objects.get(id=self.scan.id)  # Refresh from DB
-            if scan.status == 'failed' and 'cancelled by user' in scan.error_message:
-                logger.info(f"Passive scan was cancelled by user: {self.target_url}")
-                return
+            # Check if the scan was cancelled (only if auto-completing)
+            if self.auto_complete:
+                scan = Scan.objects.get(id=self.scan.id)  # Refresh from DB
+                if scan.status == 'failed' and 'cancelled by user' in scan.error_message:
+                    logger.info(f"Passive scan was cancelled by user: {self.target_url}")
+                    return
             
-            # Mark scan as completed
-            self.scan.status = 'completed'
-            self.scan.completed_at = timezone.now()
-            self.scan.save()
-            
-            logger.info(f"Passive scan completed for {self.target_url}")
+            # Mark scan as completed (only if auto-completing)
+            if self.auto_complete:
+                self.scan.status = 'completed'
+                self.scan.completed_at = timezone.now()
+                self.scan.save()
+                
+                logger.info(f"Passive scan completed for {self.target_url}")
+            else:
+                logger.info(f"Passive scan phase completed for {self.target_url} (part of mixed scan)")
             
         except Exception as e:
-            # Mark scan as failed if there's an exception
+            # Mark scan as failed if there's an exception (only if auto-completing)
             logger.exception(f"Passive scan failed for {self.target_url}: {str(e)}")
-            self.scan.status = 'failed'
-            self.scan.error_message = str(e)
-            self.scan.completed_at = timezone.now()
-            self.scan.save()
+            if self.auto_complete:
+                self.scan.status = 'failed'
+                self.scan.error_message = str(e)
+                self.scan.completed_at = timezone.now()
+                self.scan.save()
+            else:
+                # For mixed scans, just log the error but don't fail the whole scan
+                logger.error(f"Passive phase error (mixed scan): {str(e)}")
+                raise  # Re-raise so the orchestrator can handle it
     
     def _run_passive_scanner(self, scan_type):
         """Run a specific passive scanner and save results"""

@@ -1,4 +1,4 @@
-// frontend/src/services/scanService.js - Updated for consolidated compliance structure
+// frontend/src/services/scanService.js - Updated to remove database report methods
 
 import { processScanResults } from "../models/ScanResultsModel";
 import {
@@ -107,7 +107,6 @@ export const scanService = {
   },
 
   // Combine scan data and results
-
   getScanWithResults: async (id) => {
     try {
       const scanResponse = await api.get(`/scanner/scans/${id}/`);
@@ -141,7 +140,7 @@ export const scanService = {
   // Download scan report as PDF
   downloadScanReport: async (scanId) => {
     try {
-      const response = await api.get(`/scanner/scans/${scanId}/pdf/`, {
+      const response = await api.get(`/scanner/scans/${scanId}/pdf_report/`, {
         responseType: "blob",
       });
 

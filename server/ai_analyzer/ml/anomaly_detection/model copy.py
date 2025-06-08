@@ -109,92 +109,22 @@ class AnomalyDetectionModel:
             logger.error(f"Error saving model: {str(e)}")
             return False
         
-    def detect_scan_failure_anomalies(self, scan_results):
-        """Detect anomalies from scan failures and errors"""
-        anomalies = []
-        
-        # Convert QuerySet to list if needed
-        if hasattr(scan_results, 'all'):
-            results_list = list(scan_results.all())
-        else:
-            results_list = scan_results
-        
-        # Check for SSL certificate expiration
-        ssl_errors = [r for r in results_list if 
-                    'certificate has expired' in r.description or
-                    'CERTIFICATE_VERIFY_FAILED' in r.description]
-        
-        if ssl_errors:
-            anomalies.append({
-                'component': 'SSL Certificate',
-                'description': 'SSL certificate has expired, preventing secure connections',
-                'severity': 'high',
-                'recommendation': 'Renew SSL certificate immediately to restore HTTPS functionality',
-                'score': 1.0
-            })
-        
-        # Check for connection failures
-        connection_errors = [r for r in results_list if 
-                            'Failed to connect' in r.description or
-                            'Max retries exceeded' in r.description]
-        
-        if len(connection_errors) > 3:
-            anomalies.append({
-                'component': 'Website Availability',
-                'description': f'Multiple connection failures detected ({len(connection_errors)} failed attempts)',
-                'severity': 'high',
-                'recommendation': 'Check server status, DNS configuration, and network connectivity',
-                'score': 0.9
-            })
-        
-        # Check for scan timeouts
-        timeout_errors = [r for r in results_list if 
-                        'SoftTimeLimitExceeded' in r.description or
-                        'timeout' in r.description.lower()]
-        
-        if timeout_errors:
-            anomalies.append({
-                'component': 'Performance',
-                'description': 'Scan operations timed out indicating slow server responses',
-                'severity': 'medium',
-                'recommendation': 'Optimize server performance and check for resource bottlenecks',
-                'score': 0.7
-            })
-        
-        # Check for CORS configuration issues
-        cors_errors = [r for r in results_list if 
-                    r.category == 'cors' and 'Failed to analyze CORS' in r.description]
-        
-        if len(cors_errors) > 10:  # Many CORS endpoints failed
-            anomalies.append({
-                'component': 'CORS Configuration',
-                'description': f'Unable to analyze CORS on {len(cors_errors)} endpoints due to connection issues',
-                'severity': 'medium',
-                'recommendation': 'Fix underlying connection issues to properly assess CORS security',
-                'score': 0.6
-            })
-        
-        return anomalies
-
+    
     def detect_anomalies(self, scan_data):
-        """Enhanced anomaly detection including scan failures"""
-        # Try existing detection methods first
-        if isinstance(scan_data, dict):
-            return self._detect_with_statistics(scan_data)
+        """
+        Detect anomalies in scan data
         
-        # If scan_data is actually scan results (from a failed scan)
-        # Detect anomalies from the scan failures themselves
-        if hasattr(scan_data, 'filter') or isinstance(scan_data, list):
-            failure_anomalies = self.detect_scan_failure_anomalies(scan_data)
+        Args:
+            scan_data (dict): Dictionary containing scan results data
             
-            return {
-                'is_anomaly': len(failure_anomalies) > 0,
-                'anomaly_score': 1.0 if failure_anomalies else 0.0,
-                'model_based': False,
-                'anomalies': failure_anomalies
-            }
+        Returns:
+            dict: Detected anomalies with scores and descriptions
+        """
+        # If we have a trained model, use it
+        if self.model is not None:
+            return self._detect_with_model(scan_data)
         
-        # Fallback to existing logic
+        # Otherwise use rule-based/statistical detection
         return self._detect_with_statistics(scan_data)
     
     def _detect_with_model(self, scan_data):

@@ -1,182 +1,172 @@
-# backend/scanner/services/active_scanner.py - ENHANCED VERSION
+# backend/scanner/services/active_scanner.py - FIXED VERSION
 
 import logging
 from django.utils import timezone
-from ..models import ScanResult, Scan
+from scanner.models import ScanResult
 from .active_vulnerability_scanner import ActiveVulnerabilityScanner
-
-# Import passive scanners for non-intrusive tests
-from .header_scanner import HeaderScanner
-from .ssl_scanner import SslScanner
-from .content_scanner import ContentScanner
-from .port_scanner import PortScanner
-from .csp_scanner import CspScanner
-from .cookie_scanner import CookieScanner
-from .cors_scanner import CorsScanner
-from .server_analyzer import ServerAnalyzer
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
 class ActiveScanService:
-    """
-    Enhanced active security scanner that performs both active and passive testing.
-    REQUIRES EXPLICIT AUTHORIZATION - Only use on systems you own or have permission to test.
-    """
+    """Service for running active security scans"""
     
-    def __init__(self, scan, user=None, compliance_mode='strict'):
+    def __init__(self, scan, user=None, compliance_mode='strict', auto_complete=True, skip_rate_limiting=False):
         self.scan = scan
-        self.target_url = scan.target_url
-        self.scan_types = scan.scan_types
-        self.user = user
-        self.compliance_mode = compliance_mode
+        self.user = user or scan.user
+        self.compliance_mode = compliance_mode or getattr(scan, 'compliance_mode', 'strict')
+        self.auto_complete = auto_complete
+        self.skip_rate_limiting = skip_rate_limiting
         
-        # Initialize ALL scanners with compliance mode
-        self.scanners = {
-            # ACTIVE-ONLY SCANNERS (require authorization)
-            'vulnerabilities': ActiveVulnerabilityScanner(
-                self.target_url, 
-                user=user, 
-                compliance_mode=compliance_mode
-            ),
-            
-            # PASSIVE SCANNERS (safe to run during active scan)
-            'headers': HeaderScanner(self.target_url),
-            'ssl': SslScanner(self.target_url),
-            'content': ContentScanner(self.target_url),
-            'csp': CspScanner(self.target_url),
-            'cookies': CookieScanner(self.target_url),
-            'cors': CorsScanner(self.target_url),
-            'server': ServerAnalyzer(self.target_url),
-            
-            # PORT SCANNING (requires authorization)
-            'ports': PortScanner(self.target_url),
-        }
+        logger.info(f"ActiveScanService initialized for {scan.target_url} (auto_complete={auto_complete}, skip_rate_limiting={skip_rate_limiting})")
     
     def run(self):
-        """Run comprehensive active security scanning with compliance checks"""
-        logger.info(f"Starting active scan for {self.target_url} with types: {self.scan_types} (mode: {self.compliance_mode})")
-        
+        """Run the active scan"""
         try:
-            # Pre-scan authorization check
-            if not self._check_authorization():
-                raise Exception("Active scanning requires explicit authorization")
+            # Update scan status to in_progress if auto_completing
+            if self.auto_complete:
+                self.scan.status = 'in_progress'
+                self.scan.started_at = timezone.now()
+                self.scan.save()
+                logger.info(f"Active scan started for {self.scan.target_url}")
             
-            # Update scan status to in_progress and set started timestamp
-            self.scan.status = 'in_progress'
-            self.scan.started_at = timezone.now()
-            self.scan.save()
+            # Run active vulnerability scanning
+            findings = self._run_active_vulnerability_scan()
             
-            # Run each requested scanner
-            for scan_type in self.scan_types:
-                if scan_type in self.scanners:
-                    self._run_scanner(scan_type)
-                else:
-                    logger.warning(f"Unknown scan type: {scan_type}")
-
+            # Process and save findings
+            self._save_findings(findings)
             
-            
-            # Check if the scan was cancelled
-            scan = Scan.objects.get(id=self.scan.id)  # Refresh from DB
-            if scan.status == 'failed' and 'cancelled by user' in scan.error_message:
-                logger.info(f"Active scan was cancelled by user: {self.target_url}")
-                return
-            
-            # Mark scan as completed
-            self.scan.status = 'completed'
-            self.scan.completed_at = timezone.now()
-            self.scan.save()
-            
-            logger.info(f"Active scan completed for {self.target_url}")
+            # Complete the scan if auto_complete is enabled
+            if self.auto_complete:
+                from celery_app.tasks import complete_scan_with_ai_analysis
+                complete_scan_with_ai_analysis(self.scan)
+                logger.info(f"Active scan completed for {self.scan.target_url}")
+            else:
+                logger.info(f"Active scan phase completed for {self.scan.target_url} (auto_complete=False)")
             
         except Exception as e:
-            # Mark scan as failed if there's an exception
-            logger.exception(f"Active scan failed for {self.target_url}: {str(e)}")
-            self.scan.status = 'failed'
-            self.scan.error_message = str(e)
-            self.scan.completed_at = timezone.now()
-            self.scan.save()
+            logger.exception(f"Error in active scan for {self.scan.target_url}: {str(e)}")
+            
+            # Update scan status to failed if auto_completing
+            if self.auto_complete:
+                self.scan.status = 'failed'
+                self.scan.error_message = str(e)
+                self.scan.completed_at = timezone.now()
+                self.scan.save()
+            
+            raise
     
-    def _check_authorization(self):
-        """Check if user has authorization for active scanning"""
-        from urllib.parse import urlparse
-        
-        domain = urlparse(self.target_url).netloc
-        
-        # Check for development domains that don't require authorization
-        development_domains = [
-            'badssl.com', 'testphp.vulnweb.com', 'demo.testfire.net',
-            'httpbin.org', 'localhost', '127.0.0.1', 'reqbin.com','self-signed.badssl.com',
-            'wrong.host.badssl.com', 'expired.badssl.com','revoked.badssl.com', 'pinning-test.badssl.com',
-            'no-common-name.badssl.com','no-subject.badssl.com','incomplete-chain.badssl.com', 'sha1-intermediate.badssl.com',
-            'httpbin.org','jsonplaceholder.typicode.com', 'postman-echo.com', 'example.com', 'test.com',
-            'testphp.vulnweb.com', 
-        ]
-        
-        is_dev_domain = any(dev_domain in domain for dev_domain in development_domains)
-        
-        if is_dev_domain:
-            return True
-        
-        # For production domains, check authorization
-        if hasattr(self.scan, 'authorization') and self.scan.authorization:
-            return self.scan.authorization.is_valid()
-        
-        return False
-    
-    def _run_scanner(self, scan_type):
-        """Run a specific scanner and save results"""
+    def _run_active_vulnerability_scan(self):
+        """Run active vulnerability scanning with proper error handling"""
         try:
-            logger.info(f"Running {scan_type} scan for {self.target_url}")
-            scanner = self.scanners[scan_type]
+            scanner = ActiveVulnerabilityScanner(
+                url=self.scan.target_url,
+                user=self.user,
+                compliance_mode=self.compliance_mode,
+                skip_rate_limiting=self.skip_rate_limiting
+            )
+            
             findings = scanner.scan()
             
-            # Determine scan method based on scanner type
-            scan_method = 'active' if scan_type in ['vulnerabilities', 'ports'] else 'passive'
+            # CRITICAL FIX: Ensure findings is always a list
+            if findings is None:
+                logger.warning("Active vulnerability scanner returned None, using empty list")
+                findings = []
+            elif not isinstance(findings, list):
+                logger.warning(f"Active vulnerability scanner returned {type(findings)}, converting to list")
+                findings = list(findings) if findings else []
             
-            # Save findings to database
-            for finding in findings:
-                # Add timestamp for when issue was found
-                finding_details = finding.get('details', {})
-                finding_details['found_at'] = timezone.now().isoformat()
-                finding_details['scan_type'] = scan_method
-                finding_details['compliance_mode'] = self.compliance_mode
-                
-                # Add scan metadata
-                finding_details['scan_id'] = str(self.scan.id)
-                finding_details['target_url'] = self.target_url
-                
-                # Add authorization info for active tests
-                if scan_method == 'active':
-                    finding_details['authorized'] = True
-                    finding_details['authorization_method'] = 'pre-authorized-domain'
-                
-                # Create scan result
-                ScanResult.objects.create(
-                    scan=self.scan,
-                    category=scan_type,
-                    name=finding['name'],
-                    description=finding['description'],
-                    severity=finding['severity'],
-                    details=finding_details
-                )
-                
-            logger.info(f"Completed {scan_type} scan for {self.target_url} - Found {len(findings)} issues")
+            logger.info(f"Active vulnerability scan completed with {len(findings)} findings")
+            return findings
             
         except Exception as e:
-            logger.exception(f"Error in {scan_type} scan for {self.target_url}: {str(e)}")
-            # Create an error result
-            ScanResult.objects.create(
-                scan=self.scan,
-                category=scan_type,
-                name=f"Error in {scan_type} scan",
-                description=str(e),
-                severity='info',
-                details={
+            logger.exception(f"Error in active vulnerability scanning: {str(e)}")
+            # Return a finding about the scan error instead of failing completely
+            return [{
+                'name': 'Active Scan Error',
+                'description': f'Error during active vulnerability scanning: {str(e)}',
+                'severity': 'info',
+                'details': {
                     'error': str(e),
                     'scan_type': 'active',
+                    'scan_id': str(self.scan.id),
+                    'target_url': self.scan.target_url
+                }
+            }]
+    
+    def _save_findings(self, findings):
+        """Save scan findings to database with proper error handling"""
+        if not findings:
+            logger.info("No active scan findings to save")
+            return
+        
+        saved_count = 0
+        error_count = 0
+        
+        # CRITICAL FIX: Ensure findings is iterable
+        if not isinstance(findings, (list, tuple)):
+            logger.error(f"Findings is not iterable: {type(findings)}")
+            findings = []
+        
+        for finding in findings:
+            try:
+                # CRITICAL FIX: Ensure finding is a dictionary
+                if not isinstance(finding, dict):
+                    logger.warning(f"Skipping non-dict finding: {type(finding)}")
+                    error_count += 1
+                    continue
+                
+                # Extract finding data with defaults
+                name = finding.get('name', 'Unknown Active Finding')
+                description = finding.get('description', 'No description available')
+                severity = finding.get('severity', 'info')
+                details = finding.get('details', {})
+                
+                # Ensure details is a dictionary
+                if not isinstance(details, dict):
+                    details = {'original_details': str(details)}
+                
+                # Add scan metadata
+                details.update({
+                    'scan_type': 'active',
+                    'scan_id': str(self.scan.id),
                     'compliance_mode': self.compliance_mode,
-                    'target_url': self.target_url,
-                    'timestamp': timezone.now().isoformat()
+                    'found_at': timezone.now().isoformat(),
+                    'skip_rate_limiting': self.skip_rate_limiting
+                })
+                
+                # Create ScanResult
+                scan_result = ScanResult.objects.create(
+                    scan=self.scan,
+                    category='active_vulnerabilities',  # Prefix with 'active_' to avoid conflicts
+                    name=name,
+                    description=description,
+                    severity=severity,
+                    details=details
+                )
+                
+                saved_count += 1
+                logger.debug(f"Saved active finding: {name}")
+                
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Error saving active finding: {str(e)}")
+                logger.debug(f"Problem finding data: {finding}")
+        
+        logger.info(f"Active scan findings saved: {saved_count} successful, {error_count} errors")
+        
+        # If we had errors, create a summary finding
+        if error_count > 0:
+            ScanResult.objects.create(
+                scan=self.scan,
+                category='active_scan_issues',
+                name='Active Scan Processing Errors',
+                description=f'Encountered {error_count} errors while processing active scan findings',
+                severity='info',
+                details={
+                    'error_count': error_count,
+                    'saved_count': saved_count,
+                    'scan_type': 'active',
+                    'scan_id': str(self.scan.id),
+                    'recommendation': 'Review scan logs for details about processing errors'
                 }
             )

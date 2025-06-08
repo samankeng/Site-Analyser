@@ -1,4 +1,4 @@
-# backend/scanner/serializers.py - Updated without domain authorization logic
+# backend/scanner/serializers.py - Updated to remove database report references
 
 from rest_framework import serializers
 from .models import (
@@ -22,6 +22,7 @@ class ScanSerializer(serializers.ModelSerializer):
     authorization_info = serializers.SerializerMethodField()
     legal_compliance = serializers.SerializerMethodField()
     scan_mode_info = serializers.SerializerMethodField()
+    pdf_report_available = serializers.SerializerMethodField()
     
     class Meta:
         model = Scan
@@ -31,13 +32,15 @@ class ScanSerializer(serializers.ModelSerializer):
             'compliance_mode', 'terms_accepted', 'terms_accepted_at',
             'authorization_required', 'requests_made', 'pages_scanned', 
             'compliance_violations', 'results', 'compliance_status', 
-            'authorization_info', 'legal_compliance', 'scan_mode_info'
+            'authorization_info', 'legal_compliance', 'scan_mode_info',
+            'pdf_report_available'
         )
         read_only_fields = (
             'id', 'status', 'created_at', 'updated_at', 'started_at',
             'completed_at', 'error_message', 'requests_made', 'pages_scanned',
             'compliance_violations', 'compliance_status', 'authorization_info',
-            'legal_compliance', 'scan_mode_info', 'authorization_required'
+            'legal_compliance', 'scan_mode_info', 'authorization_required',
+            'pdf_report_available'
         )
     
     def get_compliance_status(self, obj):
@@ -133,6 +136,10 @@ class ScanSerializer(serializers.ModelSerializer):
             'is_authorized': obj.is_authorized() if hasattr(obj, 'is_authorized') else True,
             'requires_authorization': obj.requires_authorization() if hasattr(obj, 'requires_authorization') else False
         }
+    
+    def get_pdf_report_available(self, obj):
+        """Check if PDF report can be generated for this scan"""
+        return obj.status == 'completed'
     
     def _calculate_compliance_score(self, obj):
         """Calculate compliance score for scan"""

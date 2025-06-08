@@ -22,6 +22,16 @@ class ScanCompletionMixin:
     def complete_scan(self, scan):
         """Complete the scan and trigger AI analysis if enabled"""
         try:
+            # Import and use the centralized completion logic from tasks
+            from celery_app.tasks import complete_scan_with_ai_analysis
+            
+            # This handles status update and AI analysis (no report creation)
+            complete_scan_with_ai_analysis(scan)
+            
+        except ImportError:
+            # Fallback to local implementation if tasks not available
+            logger.warning("Could not import tasks module, using local completion logic")
+            
             # Update scan status
             scan.status = 'completed'
             scan.completed_at = timezone.now()
@@ -110,7 +120,7 @@ class ScanService(ScanCompletionMixin):
                 logger.info(f"Scan was cancelled by user: {self.target_url}")
                 return
             
-            # Complete scan and trigger AI analysis
+            # Complete scan and trigger AI analysis (no automatic report creation)
             self.complete_scan(self.scan)
             logger.info(f"Scan completed for {self.target_url}")
             

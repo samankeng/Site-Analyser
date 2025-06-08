@@ -1,11 +1,10 @@
-// frontend/src/pages/scans/ScanStatus.js
+// frontend/src/pages/scans/ScanStatus.js - Updated to remove database reports
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import VulnerabilityList from "../../components/reports/VulnerabilityList";
 import ScanProgress from "../../components/security/ScanProgress";
 import { reportService } from "../../services/reportService";
-import { scanReportService } from "../../services/scanReportService";
 import { scanService } from "../../services/scanService";
 
 import {
@@ -39,22 +38,9 @@ const ScanStatus = () => {
         setScanData(response.data);
         console.log("Scan Results:", response.data.results);
 
-        const virtualReport = reportService.convertScanToReport(response.data); // ✅ define first
-        setReportData(virtualReport); // ✅ now set it safely
-
-        // Try loading the real report (matches the PDF)
-        if (response.data.status === "completed") {
-          try {
-            const reportResponse = await scanReportService.getReportForScan(id);
-            if (reportResponse.success && reportResponse.data) {
-              setReportData(reportResponse.data); // ✅ replace virtual with real if exists
-            } else {
-              console.warn("No finalized report exists for scan", id);
-            }
-          } catch (e) {
-            console.error("Error getting report for scan:", e);
-          }
-        }
+        // Convert scan to virtual report for display
+        const virtualReport = reportService.convertScanToReport(response.data);
+        setReportData(virtualReport);
       } else {
         setError("Failed to fetch scan data");
       }
@@ -69,9 +55,6 @@ const ScanStatus = () => {
   // Fetch scan data on component mount
   useEffect(() => {
     fetchScan();
-    if (scanData) {
-      console.log("Scan Data Structure:", scanData);
-    }
   }, [fetchScan]);
 
   // Poll for updates if scan is in progress
@@ -103,6 +86,16 @@ const ScanStatus = () => {
     } catch (error) {
       console.error("Error cancelling scan:", error);
       setError("An unexpected error occurred");
+    }
+  };
+
+  // Handle PDF download
+  const handleDownloadPDF = async () => {
+    try {
+      await reportService.generatePdf(id);
+    } catch (error) {
+      console.error("Error downloading PDF:", error);
+      setError("Failed to generate PDF report");
     }
   };
 
@@ -144,6 +137,14 @@ const ScanStatus = () => {
           <Link to="/dashboard" className="btn btn-outline-secondary me-2">
             Back to Dashboard
           </Link>
+          {scanData.status === "completed" && (
+            <button
+              className="btn btn-primary me-2"
+              onClick={handleDownloadPDF}
+            >
+              Download PDF Report
+            </button>
+          )}
           {scanData.status === "in_progress" && (
             <button className="btn btn-danger" onClick={handleCancelScan}>
               Cancel Scan
@@ -228,22 +229,6 @@ const ScanStatus = () => {
             </div>
 
             {/* Severity summary */}
-            {/* {Object.keys(scanData.severityCounts).length > 0 && (
-              <div className="mb-4">
-                <h6>Summary of Findings</h6>
-                <div className="d-flex flex-wrap">
-                  {Object.entries(scanData.severityCounts).map(([severity, count]) => (
-                    <div key={severity} className="me-3 mb-2">
-                      <span className={`badge ${getSeverityBadgeClass(severity)} me-1`}>
-                        {count}
-                      </span>
-                      <span className="text-capitalize">{severity}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )} */}
-
             {(() => {
               const counts = reportData?.findings_summary?.counts;
               return counts ? (
@@ -276,9 +261,15 @@ const ScanStatus = () => {
             )}
 
             <div className="mt-4">
-              <Link to={`/reports/${id}`} className="btn btn-primary">
+              <Link
+                to={`/reports/${id}`}
+                className="btn btn-outline-primary me-2"
+              >
                 View Full Report
               </Link>
+              <button className="btn btn-primary" onClick={handleDownloadPDF}>
+                Download PDF Report
+              </button>
             </div>
           </div>
         </div>

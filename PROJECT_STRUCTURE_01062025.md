@@ -1,4 +1,4 @@
-# 📁 Project Structure – Site-Analyser
+﻿# 📁 Project Structure – Site-Analyser
 
 This project consists of a **React.js frontend** and a **Django backend**, supported by Docker, Celery, and an extensible compliance and scanning system.
 
@@ -51,21 +51,38 @@ server/
 │   ├── shodan_service.py
 │   ├── ssl_labs_service.py
 │   └── virus_total_service.py
-├── reports/
 ├── scanner/
 │   └── services/
-│       ├── content_scanner.py
-│       ├── cookie_scanner.py
-│       ├── cors_scanner.py
-│       ├── csp_scanner.py
-│       ├── header_scanner.py
-│       ├── pdf_report_generator.py
-│       ├── port_scanner.py
-│       ├── scan_service.py
-│       ├── scan_types.py
-│       ├── server_analyzer.py
-│       ├── ssl_scanner.py
-│       └── vulnerability_scanner.py
+│   |   ├── content_scanner.py
+│   |   ├── cookie_scanner.py
+│   |   ├── cors_scanner.py
+│   |   ├── csp_scanner.py
+│   |   ├── header_scanner.py
+│   |   ├── pdf_report_generator.py
+│   |   ├── port_scanner.py
+│   |   ├── scan_service.py
+│   |   ├── scan_types.py
+│   |   ├── server_analyzer.py
+│   |   ├── ssl_scanner.py
+│   |   ├── active_vulnerability_scanner.py
+|   |   ├── active_scanner.py
+│   |   ├── passive_vulnerability_scanner.py
+|   |   ├── passive_scanner.py
+│   |   ├── active_vulnerability_scanner.py
+│   |   └── mix_scan_service.py
+│   └── management/
+│   |   ├── __init__.py
+│   |   └── commands/
+│   │       ├── __init__.py
+│   │       └── setup_admin.py
+|   |    
+|   ├── models.py
+|   ├── urls.py
+|   ├── views.py
+|   └── admin.py
+|   ├── apps.py
+|   └── serializers.py
+|   └── __init__.py
 ├── scripts/
 │   ├── celery-entrypoint.sh
 │   └── entrypoint.sh
@@ -78,6 +95,7 @@ server/
 │   ├── asgi.py
 │   ├── urls.py
 │   └── wsgi.py
+|   └── __init__.py
 ├── templates/
 │   └── emails/
 │       ├── email_verification.html
@@ -88,7 +106,13 @@ server/
     ├── models.py
     ├── urls.py
     ├── views.py
-    └── compliance_service.py
+    ├── management
+    │    └── commands
+    │        ├── __init__.py
+    │        └── setup_test_domains.py
+    └── services
+        └── compliance_service.py
+    
 ```
 
 ---
@@ -210,3 +234,4 @@ docs/
 ├── architecture/
 └── user-guides/
 ```
+

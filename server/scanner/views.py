@@ -1,4 +1,4 @@
-# backend/scanner/views.py - Updated to use compliance service
+# backend/scanner/views.py - Updated to use only PDF reports
 
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
@@ -110,6 +110,85 @@ class ScanViewSet(viewsets.ModelViewSet):
                 start_active_scan_task.delay(str(scan.id))
         
         return scan
+    
+    @action(detail=True, methods=['get'])
+    def results(self, request, pk=None):
+        """Get scan results for a specific scan"""
+        try:
+            scan = self.get_object()
+            results = ScanResult.objects.filter(scan=scan).order_by('-created_at')
+            
+            # Basic pagination
+            page_size = int(request.query_params.get('page_size', 50))
+            page = int(request.query_params.get('page', 1))
+            start = (page - 1) * page_size
+            end = start + page_size
+            
+            paginated_results = results[start:end]
+            serializer = ScanResultSerializer(paginated_results, many=True)
+            
+            return Response({
+                'count': results.count(),
+                'results': serializer.data,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (results.count() + page_size - 1) // page_size
+            })
+            
+        except Exception as e:
+            logger.exception(f"Error getting results for scan {pk}: {str(e)}")
+            return Response(
+                {'detail': f'Error getting results: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['get'])
+    def pdf_report(self, request, pk=None):
+        """Generate a comprehensive PDF report for a scan"""
+        scan = self.get_object()
+        
+        if scan.status != 'completed':
+            return Response(
+                {'error': 'Cannot generate report for incomplete scan'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get scan results
+            results = ScanResult.objects.filter(scan=scan).order_by('severity')
+            
+            # Generate the PDF report
+            report_generator = PDFReportGenerator(scan, results)
+            pdf_data = report_generator.generate_pdf()
+            
+            # Log PDF generation
+            SecurityAuditLog.objects.create(
+                event_type='report_generated',
+                severity='low',
+                user=request.user,
+                ip_address=self._get_client_ip(request),
+                scan_id=scan.id,
+                message=f'PDF report generated for {scan.scan_mode} scan of {scan.target_url}',
+                event_data={
+                    'scan_mode': scan.scan_mode,
+                    'results_count': results.count(),
+                    'report_type': 'pdf'
+                }
+            )
+            
+            # Create the HTTP response with PDF content
+            response = HttpResponse(content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="security-scan-{scan.scan_mode}-{scan.id}.pdf"'
+            response.write(pdf_data)
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error generating PDF for scan {scan.id}: {str(e)}")
+            return Response(
+                {'error': f'Failed to generate PDF report: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=False, methods=['get'])
     def scan_modes(self, request):
@@ -255,33 +334,6 @@ class ScanViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get'])
-    def pdf(self, request, pk=None):
-        """Generate a comprehensive PDF report for a scan"""
-        scan = self.get_object()
-        
-        try:
-            # Get scan results
-            results = ScanResult.objects.filter(scan=scan).order_by('severity')
-            
-            # Generate the PDF report
-            report_generator = PDFReportGenerator(scan, results)
-            pdf_data = report_generator.generate_pdf()
-            
-            # Create the HTTP response with PDF content
-            response = HttpResponse(content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="security-scan-{scan.scan_mode}-{scan.id}.pdf"'
-            response.write(pdf_data)
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error generating PDF for scan {scan.id}: {str(e)}")
-            return Response(
-                {'error': f'Failed to generate PDF report: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=True, methods=['get'])
     def compliance_report(self, request, pk=None):
         """Generate compliance report for a scan"""
         scan = self.get_object()
@@ -302,6 +354,45 @@ class ScanViewSet(viewsets.ModelViewSet):
         }
         
         return Response(report_data)
+    
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """Get scan statistics for the current user"""
+        try:
+            user_scans = self.get_queryset()
+            
+            # Count scans by status
+            status_counts = {
+                'total': user_scans.count(),
+                'completed': user_scans.filter(status='completed').count(),
+                'in_progress': user_scans.filter(status='in_progress').count(),
+                'pending': user_scans.filter(status='pending').count(),
+                'failed': user_scans.filter(status='failed').count(),
+            }
+            
+            # Count scans by mode
+            mode_counts = {
+                'passive': user_scans.filter(scan_mode='passive').count(),
+                'active': user_scans.filter(scan_mode='active').count(),
+                'mixed': user_scans.filter(scan_mode='mixed').count(),
+            }
+            
+            # Get recent scans
+            recent_scans = user_scans[:5]
+            recent_scans_data = ScanSerializer(recent_scans, many=True).data
+            
+            return Response({
+                'status_counts': status_counts,
+                'mode_counts': mode_counts,
+                'recent_scans': recent_scans_data,
+            })
+            
+        except Exception as e:
+            logger.exception(f"Error getting scan statistics: {str(e)}")
+            return Response(
+                {'detail': f'Error getting statistics: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def _get_client_ip(self, request):
         """Get client IP address from request"""
