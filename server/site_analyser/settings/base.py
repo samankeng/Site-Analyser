@@ -192,6 +192,7 @@ SIMPLE_JWT = {
 
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
+    "https://humble-spirit-production.up.railway.app",  # Your frontend URL
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
