@@ -9,13 +9,24 @@ from .base import *
 DEBUG = False
 ALLOWED_HOSTS = ['*']  # Railway will provide the domain
 
-# Database - Use Railway's PostgreSQL
+# Override the base.py database settings with Railway's PostgreSQL
+# Manual database configuration (more reliable than dj-database-url)
 DATABASES = {
-    'default': dj_database_url.parse(
-        os.environ.get('DATABASE_URL'),
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'railway',
+        'USER': 'postgres',
+        'PASSWORD': 'SvndLuoSseeTRnEOXOsJoOZXpdYEouAA',
+        'HOST': 'hopper.proxy.rlwy.net',
+        'PORT': '48435',
+        'OPTIONS': {
+            'connect_timeout': 10,
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 5,
+        }
+    }
 }
 
 # Redis/Celery - Use Railway's Redis if available
