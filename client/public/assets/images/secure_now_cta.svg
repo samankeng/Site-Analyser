@@ -1,0 +1,116 @@
+<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="urgentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF5722;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D32F2F;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="successGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2E7D32;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="clockGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFC107;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF8F00;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fff3e0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fce4ec;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="pulseGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FF5722;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#FF5722;stop-opacity:0.1" />
+    </radialGradient>
+  </defs>
+  
+  <rect width="400" height="300" fill="url(#bgGradient)"/>
+  
+  <!-- Central urgency clock -->
+  <circle cx="200" cy="150" r="50" fill="url(#clockGrad)" stroke="#E65100" stroke-width="3"/>
+  <circle cx="200" cy="150" r="45" fill="#FFF8E1" stroke="#FF8F00" stroke-width="1"/>
+  
+  <!-- Clock hands showing urgency (11:59) -->
+  <line x1="200" y1="150" x2="200" y2="120" stroke="#D32F2F" stroke-width="4" stroke-linecap="round"/>
+  <line x1="200" y1="150" x2="220" y2="130" stroke="#D32F2F" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="200" cy="150" r="5" fill="#D32F2F"/>
+  
+  <!-- Clock numbers -->
+  <text x="200" y="115" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#E65100">12</text>
+  <text x="235" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#E65100">3</text>
+  <text x="200" y="190" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#E65100">6</text>
+  <text x="165" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#E65100">9</text>
+  
+  <!-- Pulsing urgency rings -->
+  <circle cx="200" cy="150" r="70" fill="none" stroke="#FF5722" stroke-width="2" opacity="0.6">
+    <animate attributeName="r" values="70;85;70" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.6;0.1;0.6" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="200" cy="150" r="85" fill="none" stroke="#FF5722" stroke-width="1" opacity="0.4">
+    <animate attributeName="r" values="85;100;85" dur="2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.4;0.05;0.4" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  
+  <!-- Security vulnerabilities (left side) -->
+  <g transform="translate(50, 100)">
+    <!-- Warning triangle -->
+    <path d="M 0 20 L 15 -10 L 30 20 Z" fill="url(#urgentGrad)" stroke="#B71C1C" stroke-width="2"/>
+    <text x="15" y="15" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">!</text>
+    
+    <!-- Vulnerability indicators -->
+    <rect x="-5" y="30" width="40" height="4" rx="2" fill="#F44336" opacity="0.8"/>
+    <rect x="-5" y="38" width="35" height="4" rx="2" fill="#FF5722" opacity="0.8"/>
+    <rect x="-5" y="46" width="30" height="4" rx="2" fill="#FF9800" opacity="0.8"/>
+    
+    <text x="15" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#D32F2F" font-weight="bold">VULNERABILITIES</text>
+  </g>
+  
+  <!-- Solution/Security (right side) -->
+  <g transform="translate(320, 100)">
+    <!-- Security shield -->
+    <path d="M 15 -10 L 25 -15 L 35 -10 L 35 15 Q 35 25 25 30 Q 15 25 15 15 Z" fill="url(#successGrad)" stroke="#1B5E20" stroke-width="2"/>
+    <path d="M 20 8 L 24 12 L 30 2" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/>
+    
+    <!-- Success indicators -->
+    <rect x="10" y="35" width="30" height="4" rx="2" fill="#4CAF50" opacity="0.8"/>
+    <rect x="10" y="43" width="35" height="4" rx="2" fill="#2E7D32" opacity="0.8"/>
+    <rect x="10" y="51" width="25" height="4" rx="2" fill="#388E3C" opacity="0.8"/>
+    
+    <text x="25" y="70" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#2E7D32" font-weight="bold">SECURED</text>
+  </g>
+  
+  <!-- Transformation arrow -->
+  <path d="M 120 150 Q 160 130 240 150" stroke="#2196F3" stroke-width="4" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+    <animate attributeName="stroke-dasharray" values="0,100;50,50;100,0" dur="2s" repeatCount="indefinite"/>
+  </path>
+  
+  <!-- Arrow marker -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#2196F3"/>
+    </marker>
+  </defs>
+  
+  <!-- "NOW" emphasis -->
+  <g transform="translate(200, 220)">
+    <rect x="-30" y="-12" width="60" height="24" rx="12" fill="url(#urgentGrad)" stroke="#B71C1C" stroke-width="2">
+      <animate attributeName="fill" values="url(#urgentGrad);#FF8A65;url(#urgentGrad)" dur="1s" repeatCount="indefinite"/>
+    </rect>
+    <text x="0" y="4" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">NOW</text>
+  </g>
+  
+  <!-- Floating action indicators -->
+  <g opacity="0.7">
+    <circle cx="80" cy="50" r="12" fill="#E3F2FD" stroke="#2196F3" stroke-width="2">
+      <animateTransform attributeName="transform" type="translate" values="0,0;5,-5;0,0" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <path d="M 75 50 L 85 50 M 80 45 L 80 55" stroke="#2196F3" stroke-width="2"/>
+    
+    <circle cx="320" cy="250" r="10" fill="#E8F5E8" stroke="#4CAF50" stroke-width="2">
+      <animateTransform attributeName="transform" type="translate" values="0,0;-3,3;0,0" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <path d="M 316 250 L 320 254 L 324 246" stroke="#4CAF50" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Urgency text -->
+  <text x="200" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#D32F2F">DON'T WAIT</text>
+  <text x="200" y="280" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#666">Every moment counts for your security</text>
+</svg>

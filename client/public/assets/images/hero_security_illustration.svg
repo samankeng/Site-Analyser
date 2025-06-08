@@ -1,0 +1,72 @@
+<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8f9ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e8f0ff;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="shieldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2E7D32;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="screenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5f5f5;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <rect width="400" height="300" fill="url(#bgGradient)"/>
+  
+  <!-- Computer/Laptop -->
+  <rect x="80" y="120" width="180" height="110" rx="8" fill="#2c3e50" stroke="#34495e" stroke-width="2"/>
+  <rect x="90" y="130" width="160" height="90" rx="4" fill="url(#screenGradient)"/>
+  
+  <!-- Screen content - Security dashboard -->
+  <rect x="100" y="140" width="140" height="8" rx="2" fill="#e74c3c"/>
+  <rect x="100" y="155" width="100" height="6" rx="1" fill="#3498db"/>
+  <rect x="100" y="165" width="120" height="6" rx="1" fill="#2ecc71"/>
+  <rect x="100" y="175" width="80" height="6" rx="1" fill="#f39c12"/>
+  
+  <!-- Security metrics bars -->
+  <rect x="100" y="190" width="60" height="4" rx="1" fill="#27ae60"/>
+  <rect x="100" y="200" width="90" height="4" rx="1" fill="#e67e22"/>
+  <rect x="100" y="210" width="45" height="4" rx="1" fill="#e74c3c"/>
+  
+  <!-- Laptop base -->
+  <rect x="70" y="230" width="200" height="15" rx="8" fill="#34495e"/>
+  
+  <!-- Large security shield -->
+  <path d="M 300 80 L 320 60 L 340 80 L 340 140 Q 340 160 320 170 Q 300 160 300 140 Z" fill="url(#shieldGradient)" stroke="#1B5E20" stroke-width="2"/>
+  
+  <!-- Check mark in shield -->
+  <path d="M 310 110 L 318 118 L 330 100" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Scanning waves/signals -->
+  <circle cx="170" cy="175" r="25" fill="none" stroke="#3498db" stroke-width="2" opacity="0.4">
+    <animate attributeName="r" values="25;35;25" dur="2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.4;0.1;0.4" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="170" cy="175" r="35" fill="none" stroke="#2ecc71" stroke-width="2" opacity="0.3">
+    <animate attributeName="r" values="35;45;35" dur="2.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.3;0.05;0.3" dur="2.5s" repeatCount="indefinite"/>
+  </circle>
+  
+  <!-- Floating security icons -->
+  <g transform="translate(50, 50)" opacity="0.6">
+    <circle cx="0" cy="0" r="15" fill="#ecf0f1" stroke="#bdc3c7" stroke-width="1"/>
+    <path d="M -6 -2 L -2 2 L 6 -6" stroke="#27ae60" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <animateTransform attributeName="transform" type="translate" values="50,50;55,45;50,50" dur="3s" repeatCount="indefinite"/>
+  </g>
+  
+  <g transform="translate(320, 200)" opacity="0.6">
+    <circle cx="0" cy="0" r="12" fill="#ecf0f1" stroke="#bdc3c7" stroke-width="1"/>
+    <rect x="-4" y="-6" width="8" height="8" rx="1" fill="none" stroke="#e74c3c" stroke-width="1.5"/>
+    <rect x="-2" y="-4" width="4" height="4" rx="1" fill="#e74c3c"/>
+    <animateTransform attributeName="transform" type="translate" values="320,200;315,205;320,200" dur="4s" repeatCount="indefinite"/>
+  </g>
+  
+  <!-- Data flow lines -->
+  <path d="M 260 175 Q 280 165 300 140" stroke="#3498db" stroke-width="2" fill="none" opacity="0.5" stroke-dasharray="5,5">
+    <animate attributeName="stroke-dashoffset" values="0;10;0" dur="1.5s" repeatCount="indefinite"/>
+  </path>
+</svg>
