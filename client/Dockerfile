@@ -1,4 +1,4 @@
-# client/Dockerfile - Debug version
+# client/Dockerfile - Better error debugging
 FROM node:18-alpine
 
 WORKDIR /app
@@ -7,20 +7,20 @@ WORKDIR /app
 COPY . .
 
 # Debug: Check what files we have
-RUN echo "=== Files in /app ===" && ls -la
-RUN echo "=== Files in /app/public ===" && ls -la public/ || echo "No public folder!"
-RUN echo "=== Files in /app/src ===" && ls -la src/ || echo "No src folder!"
+RUN ls -la
+RUN ls -la public/ || echo "No public folder"
+RUN ls -la src/ || echo "No src folder"
 
 # Install dependencies
 RUN npm install
 
-# Debug: Check package.json scripts
-RUN echo "=== Package.json scripts ===" && cat package.json | grep -A 10 '"scripts"'
+# Show package.json build script
+RUN cat package.json | grep -A 5 '"build"'
 
-# Debug: Try to build with verbose output
-RUN npm run build --verbose
+# Try build and capture all output
+RUN npm run build > build.log 2>&1 || (echo "=== BUILD FAILED - Log contents:" && cat build.log && exit 1)
 
-# If build succeeds, continue
+# If we get here, build succeeded
 RUN npm install -g serve
 EXPOSE 3000
 CMD ["serve", "-s", "build", "-l", "3000"]
