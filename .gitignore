@@ -237,7 +237,7 @@ build/
 *.weights
 *.ckpt
 *.pb
-models/
+#models/
 checkpoints/
 logs/
 
