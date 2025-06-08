@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "bootstrap": "^5.3.5",
+    "react-bootstrap": "^2.10.9",
+    "react-helmet-async": "^2.0.5"
+  }
+}
