@@ -93,7 +93,7 @@ class SocialAuthTokenSerializer(serializers.Serializer):
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Custom token serializer that includes user data"""
-    username_field = 'email'  # Tell Django to use email as username field
+    #username_field = 'email'  # Tell Django to use email as username field
     
     def validate(self, attrs):
         data = super().validate(attrs)
