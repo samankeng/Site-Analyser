@@ -56,10 +56,10 @@ class RiskScoringModel:
             
             # Severity deductions (amount to deduct from score)
             "severity_deductions": {
-                "critical": 25,
-                "high": 15,
-                "medium": 10,
-                "low": 5,
+                "critical": 15,
+                "high": 8,
+                "medium": 4,
+                "low": 1,
                 "info": 0
             },
             
