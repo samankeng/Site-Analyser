@@ -245,14 +245,26 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 # Celery settings
-CELERY_BROKER_URL = f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:{os.environ.get('REDIS_PORT', '6379')}/0"
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'django-db')
+# Celery settings - FIXED for Railway
+REDIS_URL = os.environ.get('REDIS_URL')
+
+if REDIS_URL:
+    # Production (Railway) - use REDIS_URL
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+else:
+    # Local development - use localhost
+    CELERY_BROKER_URL = 'redis://localhost:6379/0'
+    CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
-CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_TASK_SOFT_TIME_LIMIT = 60
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 60  # 1 minute
+CELERY_TASK_ALWAYS_EAGER = False  # Don't run tasks synchronously
+CELERY_TASK_EAGER_PROPAGATES = False
 
 # AI/ML Settings
 LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai')  # 'openai', 'ollama', etc.
