@@ -545,7 +545,7 @@ class PDFReportGenerator:
         The security score is calculated based on the number and severity of findings:
         - Critical issues: -15 points each
         - High issues: -8 points each
-        - Medium issues: -54 points each
+        - Medium issues: -4 points each
         - Low issues: -1 points each
         - Informational: No point deduction
         
