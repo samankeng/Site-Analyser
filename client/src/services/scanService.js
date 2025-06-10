@@ -118,7 +118,7 @@ export const scanService = {
 
       while (hasNext) {
         const response = await api.get(
-          `/scanner/scans/${id}/results/?page=${page}`
+          `/scanner/scans/${id}/results/?page=${page}&page_size=500`
         );
         const data = response.data;
 
