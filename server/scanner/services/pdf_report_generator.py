@@ -558,7 +558,7 @@ class PDFReportGenerator:
         - Critical issues: {severity_counts.get('critical', 0)} × -15 = {critical_deduction}
         - High issues: {severity_counts.get('high', 0)} × -8 = {high_deduction}
         - Medium issues: {severity_counts.get('medium', 0)} × -4 = {medium_deduction}
-        - Low issues: {severity_counts.get('low', 0)} × -1 = {low_deduction}
+        - Low issues: {severity_counts.get('low', 0)} × -0.5 = {low_deduction}
         - Total deduction: {total_deduction}
         
         Final score: {security_score}/100 - {self._get_risk_level_text(security_score)}

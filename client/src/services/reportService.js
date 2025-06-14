@@ -164,17 +164,6 @@ export const reportService = {
       info: 0,
     };
 
-    // Object.entries(resultsByCategory).forEach(([category, results]) => {
-    //   if (category in categoryScores) {
-    //     let deduction = 0;
-    //     results.forEach((result) => {
-    //       deduction +=
-    //         severityWeights[result.severity?.toLowerCase() || "info"] || 0;
-    //     });
-    //     categoryScores[category] = Math.max(0, Math.min(100, 100 - deduction));
-    //   }
-    // });
-
     Object.entries(resultsByCategory).forEach(([category, results]) => {
       if (!(category in categoryScores)) return;
 

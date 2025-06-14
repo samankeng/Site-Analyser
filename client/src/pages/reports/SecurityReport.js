@@ -10,6 +10,7 @@ import {
   getSecurityRating,
   getSeverityBadgeClass,
 } from "../../utils/securityUtils";
+const [expandedCategories, setExpandedCategories] = useState(new Set());
 
 const SecurityReport = () => {
   const { id } = useParams();
@@ -82,6 +83,18 @@ const SecurityReport = () => {
   const securityScore = reportData.security_score || 100;
   const severityCounts = reportData.findings_summary?.counts || {};
   const categoryCounts = reportData.category_counts || {};
+
+  const toggleCategory = (category) => {
+    setExpandedCategories((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(category)) {
+        newSet.delete(category);
+      } else {
+        newSet.add(category);
+      }
+      return newSet;
+    });
+  };
 
   return (
     <div className="container py-4">
@@ -219,7 +232,7 @@ const SecurityReport = () => {
             </div>
           )}
 
-          {activeTab === "categories" && (
+          {/* {activeTab === "categories" && (
             <div>
               <h5 className="card-title mb-4">Findings by Category</h5>
               {!categoryCounts || Object.keys(categoryCounts).length === 0 ? (
@@ -257,6 +270,53 @@ const SecurityReport = () => {
                           >
                             <VulnerabilityList results={categoryResults} />
                           </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )} */}
+
+          {activeTab === "categories" && (
+            <div>
+              <h5 className="card-title mb-4">Findings by Category</h5>
+              {!categoryCounts || Object.keys(categoryCounts).length === 0 ? (
+                <div className="alert alert-info">
+                  No findings by category available.
+                </div>
+              ) : (
+                <div className="list-group">
+                  {Object.entries(categoryCounts).map(([category, count]) => {
+                    // Get all results for this category
+                    const categoryResults =
+                      reportData.results?.filter(
+                        (result) => result.category === category
+                      ) || [];
+
+                    const isExpanded = expandedCategories.has(category);
+
+                    return (
+                      <div key={category} className="list-group-item">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                          <h6 className="mb-0 text-capitalize">{category}</h6>
+                          <span className="badge bg-secondary">{count}</span>
+                        </div>
+                        <div>
+                          <button
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={() => toggleCategory(category)}
+                          >
+                            {isExpanded ? "Hide Details" : "Show Details"}
+                          </button>
+                          {isExpanded && (
+                            <div className="mt-3">
+                              <div className="card card-body">
+                                <VulnerabilityList results={categoryResults} />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
