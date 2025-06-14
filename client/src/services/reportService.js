@@ -160,19 +160,57 @@ export const reportService = {
       critical: 15,
       high: 8,
       medium: 4,
-      low: 1,
+      low: 0.5,
       info: 0,
     };
 
+    // Object.entries(resultsByCategory).forEach(([category, results]) => {
+    //   if (category in categoryScores) {
+    //     let deduction = 0;
+    //     results.forEach((result) => {
+    //       deduction +=
+    //         severityWeights[result.severity?.toLowerCase() || "info"] || 0;
+    //     });
+    //     categoryScores[category] = Math.max(0, Math.min(100, 100 - deduction));
+    //   }
+    // });
+
     Object.entries(resultsByCategory).forEach(([category, results]) => {
-      if (category in categoryScores) {
-        let deduction = 0;
-        results.forEach((result) => {
-          deduction +=
-            severityWeights[result.severity?.toLowerCase() || "info"] || 0;
-        });
-        categoryScores[category] = Math.max(0, Math.min(100, 100 - deduction));
-      }
+      if (!(category in categoryScores)) return;
+
+      // Track total deductions per severity
+      const severityTotals = {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        info: 0,
+      };
+
+      results.forEach((result) => {
+        const severity = (result.severity || "info").toLowerCase();
+        if (severity in severityTotals) {
+          severityTotals[severity] += severityWeights[severity] || 0;
+        }
+      });
+
+      // Define max allowed deduction per severity type
+      const maxDeductionPerSeverity = {
+        critical: 60,
+        high: 40,
+        medium: 30,
+        low: 15,
+        info: 0,
+      };
+
+      // Apply caps
+      const totalDeduction = Object.entries(severityTotals).reduce(
+        (sum, [severity, total]) =>
+          sum + Math.min(total, maxDeductionPerSeverity[severity] || 0),
+        0
+      );
+
+      categoryScores[category] = Math.max(0, 100 - totalDeduction);
     });
 
     // Create a virtual report object from the scan

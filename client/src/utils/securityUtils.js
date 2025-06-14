@@ -5,19 +5,73 @@
  * @param {Array|Object} results - Raw scan results or severity counts
  * @returns {Number} Security score from 0-100
  */
+// export const calculateSecurityScore = (results) => {
+//   const severityWeights = {
+//     critical: 15,
+//     high: 8,
+//     medium: 4,
+//     low: 1,
+//     info: 0,
+//   };
+
+//   let severityCounts;
+
+//   if (Array.isArray(results)) {
+//     if (results.length === 0) return null; // <== FIX HERE
+//     severityCounts = results.reduce(
+//       (counts, result) => {
+//         const severity = (result.severity || "info").toLowerCase();
+//         counts[severity] = (counts[severity] || 0) + 1;
+//         return counts;
+//       },
+//       { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+//     );
+//   } else if (typeof results === "object") {
+//     const totalCount = Object.values(results).reduce((a, b) => a + b, 0);
+//     if (totalCount === 0) return null; // <== FIX HERE
+
+//     severityCounts = {
+//       critical: results.critical || 0,
+//       high: results.high || 0,
+//       medium: results.medium || 0,
+//       low: results.low || 0,
+//       info: results.info || 0,
+//     };
+//   } else {
+//     return null;
+//   }
+
+//   const totalDeduction = Object.entries(severityCounts).reduce(
+//     (total, [severity, count]) =>
+//       total + count * (severityWeights[severity] || 0),
+//     0
+//   );
+
+//   return Math.max(0, 100 - Math.min(100, totalDeduction));
+// };
+
 export const calculateSecurityScore = (results) => {
   const severityWeights = {
     critical: 15,
     high: 8,
     medium: 4,
-    low: 1,
+    low: 0.5,
+    info: 0,
+  };
+
+  // Max total deduction allowed per severity
+  const maxDeductionPerSeverity = {
+    critical: 60,
+    high: 40,
+    medium: 30,
+    low: 15,
     info: 0,
   };
 
   let severityCounts;
 
   if (Array.isArray(results)) {
-    if (results.length === 0) return null; // <== FIX HERE
+    if (results.length === 0) return null;
     severityCounts = results.reduce(
       (counts, result) => {
         const severity = (result.severity || "info").toLowerCase();
@@ -28,7 +82,7 @@ export const calculateSecurityScore = (results) => {
     );
   } else if (typeof results === "object") {
     const totalCount = Object.values(results).reduce((a, b) => a + b, 0);
-    if (totalCount === 0) return null; // <== FIX HERE
+    if (totalCount === 0) return null;
 
     severityCounts = {
       critical: results.critical || 0,
@@ -41,9 +95,16 @@ export const calculateSecurityScore = (results) => {
     return null;
   }
 
+  // Apply capped total deduction
   const totalDeduction = Object.entries(severityCounts).reduce(
-    (total, [severity, count]) =>
-      total + count * (severityWeights[severity] || 0),
+    (total, [severity, count]) => {
+      const deduction = count * (severityWeights[severity] || 0);
+      const cappedDeduction = Math.min(
+        deduction,
+        maxDeductionPerSeverity[severity] || 0
+      );
+      return total + cappedDeduction;
+    },
     0
   );
 

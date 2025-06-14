@@ -535,10 +535,14 @@ class PDFReportGenerator:
         elements.append(Paragraph("Security Score Explanation", self.subtitle_style))
         
         # Calculate severities for explanation
-        critical_deduction = severity_counts.get('critical', 0) * 15
-        high_deduction = severity_counts.get('high', 0) * 8
-        medium_deduction = severity_counts.get('medium', 0) * 4
-        low_deduction = severity_counts.get('low', 0) * 1
+        # critical_deduction = severity_counts.get('critical', 0) * 15
+        # high_deduction = severity_counts.get('high', 0) * 8
+        # medium_deduction = severity_counts.get('medium', 0) * 4
+        # low_deduction = severity_counts.get('low', 0) * 1
+        critical_deduction = min(severity_counts.get('critical', 0) * 15, 60)
+        high_deduction = min(severity_counts.get('high', 0) * 8, 40)
+        medium_deduction = min(severity_counts.get('medium', 0) * 4, 30)
+        low_deduction = min(severity_counts.get('low', 0) * 1, 15)
         total_deduction = critical_deduction + high_deduction + medium_deduction + low_deduction
         
         explanation_text = f"""
@@ -631,32 +635,67 @@ class PDFReportGenerator:
         
         return severity_counts
     
+    # def _calculate_security_score(self, severity_counts):
+    #     """Calculate security score based on severity counts"""
+    #     severity_weights = {
+    #         'critical': 15,  # Most severe impact
+    #         'high': 8,      # Significant risk
+    #         'medium': 4,     # Moderate concern
+    #         'low': 1,        # Minor issue
+    #         'info': 0        # Informational, no score reduction
+    #     }
+        
+    #     # Ensure all severity levels are present with default 0 if not found
+    #     normalized_counts = {
+    #         'critical': severity_counts.get('critical', 0),
+    #         'high': severity_counts.get('high', 0),
+    #         'medium': severity_counts.get('medium', 0),
+    #         'low': severity_counts.get('low', 0),
+    #         'info': severity_counts.get('info', 0)
+    #     }
+        
+    #     total_deduction = sum(
+    #         count * severity_weights.get(severity, 0) 
+    #         for severity, count in normalized_counts.items()
+    #     )
+        
+    #     # Cap deduction at 100 points, resulting in a minimum score of 0
+    #     return max(0, 100 - min(100, total_deduction))
+
     def _calculate_security_score(self, severity_counts):
-        """Calculate security score based on severity counts"""
+        """Calculate security score based on severity counts with per-severity caps"""
         severity_weights = {
             'critical': 15,  # Most severe impact
-            'high': 8,      # Significant risk
+            'high': 8,       # Significant risk
             'medium': 4,     # Moderate concern
-            'low': 1,        # Minor issue
+            'low': 0.5,        # Minor issue
             'info': 0        # Informational, no score reduction
         }
-        
-        # Ensure all severity levels are present with default 0 if not found
-        normalized_counts = {
-            'critical': severity_counts.get('critical', 0),
-            'high': severity_counts.get('high', 0),
-            'medium': severity_counts.get('medium', 0),
-            'low': severity_counts.get('low', 0),
-            'info': severity_counts.get('info', 0)
+
+        # Maximum deduction allowed per severity level
+        max_deduction_per_severity = {
+            'critical': 60,  # 3 criticals max fully counted
+            'high': 40,      # 4 highs max fully counted
+            'medium': 30,    # 5 mediums
+            'low': 15,       # 15 lows
+            'info': 0
         }
-        
-        total_deduction = sum(
-            count * severity_weights.get(severity, 0) 
-            for severity, count in normalized_counts.items()
-        )
-        
-        # Cap deduction at 100 points, resulting in a minimum score of 0
+
+        # Normalize counts
+        normalized_counts = {
+            severity: severity_counts.get(severity, 0)
+            for severity in severity_weights
+        }
+
+        # Calculate capped total deduction
+        total_deduction = 0
+        for severity, count in normalized_counts.items():
+            raw_deduction = count * severity_weights[severity]
+            capped_deduction = min(raw_deduction, max_deduction_per_severity[severity])
+            total_deduction += capped_deduction
+
         return max(0, 100 - min(100, total_deduction))
+
     
     def _create_score_gauge(self, score):
         """Create a visual gauge for the security score"""
