@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 5px;
+            display: inline-block;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Security Scanner</h1>
+        <p>Welcome to the Security Scanner application.</p>
+        
+        <div style="margin: 20px 0;">
+            {% if user.is_authenticated %}
+                <p>Welcome back, {{ user.username }}!</p>
+                <a href="{% url 'scanner:dashboard' %}" class="btn">Go to Dashboard</a>
+                <a href="{% url 'scanner:new_scan' %}" class="btn">Start New Scan</a>
+                <a href="{% url 'accounts:logout' %}" class="btn" style="background-color: #dc3545;">Logout</a>
+            {% else %}
+                <p>Please login to access the scanner.</p>
+                <a href="{% url 'accounts:login' %}" class="btn">Login</a>
+                <a href="{% url 'accounts:register' %}" class="btn" style="background-color: #28a745;">Register</a>
+            {% endif %}
+        </div>
+        
+        <div style="margin-top: 30px; font-size: 14px; color: #666;">
+            <p>This is a security scanning platform for authorized testing only.</p>
+        </div>
+    </div>
+</body>
+</html>

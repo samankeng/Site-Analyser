@@ -11,6 +11,7 @@ def health_check(request):
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('', TemplateView.as_view(template_name='index.html'), name='home'),
     path('api/health/', health_check, name='health_check'),
     path('api/auth/', include('accounts.urls')),
     path('api/scanner/', include('scanner.urls')),
