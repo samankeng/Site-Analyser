@@ -35,30 +35,35 @@ class EnhancedAIAgent:
             logger.error(f"Failed to initialize OpenAI client: {str(e)}")
             self.client = None
     
-    def analyze_scan_results_with_ai(self, scan_results, target_url: str) -> Dict[str, Any]:
+    def analyze_scan_results_with_ai(self, scan_results, target_url: str, scanner_score: int = None) -> Dict[str, Any]:
         """
         Direct AI analysis of raw scan results for actionable recommendations
+        
+        Args:
+            scan_results: The scan results to analyze
+            target_url: The target URL that was scanned
+            scanner_score: The security score calculated by the scanner (0-100)
         """
         try:
             if not self.client:
                 logger.warning("OpenAI client not available, returning fallback response")
-                return self._create_fallback_response(scan_results, target_url)
+                return self._create_fallback_response(scan_results, target_url, scanner_score)
             
             # Format scan results for AI consumption
             formatted_results = self._format_scan_results_for_ai(scan_results, target_url)
             
-            # Create structured prompt
-            prompt = self._create_comprehensive_prompt(formatted_results)
+            # Create structured prompt WITH THE SCANNER SCORE
+            prompt = self._create_comprehensive_prompt(formatted_results, scanner_score)
             
             # Get AI analysis using OpenAI API v1.0+
             ai_response = self._get_llm_response(prompt)
             
             # Parse and structure the response
-            return self._parse_ai_remediation_response(ai_response)
+            return self._parse_ai_remediation_response(ai_response, scanner_score)
             
         except Exception as e:
             logger.exception(f"Error in AI agent analysis: {str(e)}")
-            return self._create_fallback_response(scan_results, target_url)
+            return self._create_fallback_response(scan_results, target_url, scanner_score)
     
     def _get_llm_response(self, prompt: str) -> str:
         """
@@ -97,7 +102,7 @@ class EnhancedAIAgent:
             logger.error(f"Error getting LLM response: {str(e)}")
             raise
     
-    def _create_fallback_response(self, scan_results, target_url: str) -> Dict[str, Any]:
+    def _create_fallback_response(self, scan_results, target_url: str, scanner_score: int = None) -> Dict[str, Any]:
         """Create a fallback response when AI is unavailable"""
         logger.info("Creating fallback AI response based on scan results")
         
@@ -145,21 +150,24 @@ class EnhancedAIAgent:
                     "estimated_effort": "2-4 hours"
                 })
         
-        # Calculate basic risk level
-        total_critical_high = severity_counts["critical"] + severity_counts["high"]
-        if total_critical_high > 5:
+        # Use the scanner score if provided, otherwise calculate a basic one
+        if scanner_score is None:
+            scanner_score = max(20, 100 - (severity_counts["critical"] * 15 + severity_counts["high"] * 8))
+        
+        # Calculate basic risk level based on scanner score
+        if scanner_score < 50:
             risk_level = "Critical"
-        elif total_critical_high > 2:
-            risk_level = "High"
-        elif severity_counts["medium"] > 10:
+        elif scanner_score < 70:
+            risk_level = "High"  
+        elif scanner_score < 85:
             risk_level = "Medium"
         else:
             risk_level = "Low"
         
         return {
             "overall_risk_level": risk_level,
-            "security_score": max(20, 100 - (severity_counts["critical"] * 15 + severity_counts["high"] * 8)),
-            "executive_summary": f"Security analysis completed for {target_url}. Found {sum(severity_counts.values())} total issues.",
+            "security_score": scanner_score,  # Use the scanner's score
+            "executive_summary": f"Security analysis completed for {target_url}. Security score: {scanner_score}/100. Found {sum(severity_counts.values())} total issues.",
             "recommendations": recommendations[:10],  # Limit to top 10
             "quick_wins": [
                 "Address critical security headers",
@@ -193,7 +201,7 @@ class EnhancedAIAgent:
         
         return formatted
     
-    def _create_comprehensive_prompt(self, formatted_results: Dict[str, Any]) -> str:
+    def _create_comprehensive_prompt(self, formatted_results: Dict[str, Any], scanner_score: int = None) -> str:
         """Create a comprehensive prompt for actionable recommendations"""
         # Count total findings by severity
         total_findings = 0
@@ -206,53 +214,58 @@ class EnhancedAIAgent:
                 if severity in severity_summary:
                     severity_summary[severity] += 1
         
+        # Include the scanner score in the prompt
+        scanner_score_text = f"\nSCANNER SECURITY SCORE: {scanner_score}/100" if scanner_score is not None else ""
+        
         prompt = f"""
-You are a cybersecurity expert analyzing web security scan results. Provide detailed, actionable remediation advice in JSON format.
+    You are a cybersecurity expert analyzing web security scan results. Provide detailed, actionable remediation advice in JSON format.
 
-TARGET: {formatted_results['target_url']}
-SCAN DATE: {formatted_results.get('scan_timestamp', 'Unknown')}
-TOTAL FINDINGS: {total_findings}
+    TARGET: {formatted_results['target_url']}
+    SCAN DATE: {formatted_results.get('scan_timestamp', 'Unknown')}
+    TOTAL FINDINGS: {total_findings}{scanner_score_text}
 
-SEVERITY BREAKDOWN:
-- Critical: {severity_summary['critical']}
-- High: {severity_summary['high']}
-- Medium: {severity_summary['medium']}
-- Low: {severity_summary['low']}
-- Info: {severity_summary['info']}
+    IMPORTANT: The scanner has calculated a security score of {scanner_score}/100. Use this as your baseline security_score in your response.
 
-FINDINGS BY CATEGORY:
-{self._format_findings_summary(formatted_results['findings'])}
+    SEVERITY BREAKDOWN:
+    - Critical: {severity_summary['critical']}
+    - High: {severity_summary['high']}
+    - Medium: {severity_summary['medium']}
+    - Low: {severity_summary['low']}
+    - Info: {severity_summary['info']}
 
-Please provide a JSON response with this exact structure:
-{{
-    "overall_risk_level": "Critical|High|Medium|Low",
-    "security_score": 0-100,
-    "executive_summary": "Brief summary for stakeholders",
-    "recommendations": [
-        {{
-            "issue_name": "Clear name of the security issue",
-            "category": "headers|ssl|content|vulnerabilities|configuration",
-            "severity": "critical|high|medium|low|info",
-            "risk_assessment": "What this vulnerability means and why it's dangerous",
-            "business_impact": "How this could affect business operations",
-            "technical_details": "Technical explanation for developers",
-            "remediation_steps": [
-                "Step 1: Specific action to take",
-                "Step 2: Another specific action",
-                "Step 3: Verification step"
-            ],
-            "priority": "immediate|high|medium|low",
-            "estimated_effort": "30 minutes|2 hours|1 day|1 week"
-        }}
-    ],
-    "quick_wins": [
-        "Easy fixes that can be implemented immediately"
-    ],
-    "long_term_strategy": "Recommendations for ongoing security improvements"
-}}
+    FINDINGS BY CATEGORY:
+    {self._format_findings_summary(formatted_results['findings'])}
 
-Focus on the most critical issues first and provide specific, actionable steps.
-"""
+    Please provide a JSON response with this exact structure:
+    {{
+        "overall_risk_level": "Critical|High|Medium|Low",
+        "security_score": {scanner_score if scanner_score is not None else '0-100 (use the scanner score provided above)'},
+        "executive_summary": "Brief summary for stakeholders that references the security score of {scanner_score}/100",
+        "recommendations": [
+            {{
+                "issue_name": "Clear name of the security issue",
+                "category": "headers|ssl|content|vulnerabilities|configuration",
+                "severity": "critical|high|medium|low|info",
+                "risk_assessment": "What this vulnerability means and why it's dangerous",
+                "business_impact": "How this could affect business operations",
+                "technical_details": "Technical explanation for developers",
+                "remediation_steps": [
+                    "Step 1: Specific action to take",
+                    "Step 2: Another specific action",
+                    "Step 3: Verification step"
+                ],
+                "priority": "immediate|high|medium|low",
+                "estimated_effort": "30 minutes|2 hours|1 day|1 week"
+            }}
+        ],
+        "quick_wins": [
+            "Easy fixes that can be implemented immediately"
+        ],
+        "long_term_strategy": "Recommendations for ongoing security improvements"
+    }}
+
+    Focus on the most critical issues first and provide specific, actionable steps.
+    """
         return prompt
     
     def _format_findings_summary(self, findings: Dict[str, List]) -> str:
@@ -268,7 +281,7 @@ Focus on the most critical issues first and provide specific, actionable steps.
         
         return "\n".join(summary) if summary else "No specific findings to display"
     
-    def _parse_ai_remediation_response(self, ai_response: str) -> Dict[str, Any]:
+    def _parse_ai_remediation_response(self, ai_response: str, scanner_score: int = None) -> Dict[str, Any]:
         """Parse AI response into structured recommendations"""
         try:
             # Try to extract and parse JSON from response
@@ -285,8 +298,14 @@ Focus on the most critical issues first and provide specific, actionable steps.
             # Validate and add defaults
             parsed_response.setdefault('recommendations', [])
             parsed_response.setdefault('overall_risk_level', 'Medium')
-            parsed_response.setdefault('security_score', 50)
-            parsed_response.setdefault('executive_summary', 'Security analysis completed')
+            
+            # IMPORTANT: Use the scanner score if provided
+            if scanner_score is not None:
+                parsed_response['security_score'] = scanner_score
+            else:
+                parsed_response.setdefault('security_score', 50)
+            
+            parsed_response.setdefault('executive_summary', f'Security analysis completed. Security score: {parsed_response["security_score"]}/100')
             
             # Ensure each recommendation has required fields
             for rec in parsed_response['recommendations']:
@@ -297,13 +316,13 @@ Focus on the most critical issues first and provide specific, actionable steps.
                 rec.setdefault('business_impact', 'Security improvement recommended')
                 rec.setdefault('technical_details', 'See remediation steps for details')
             
-            logger.info(f"Successfully parsed AI response with {len(parsed_response['recommendations'])} recommendations")
+            logger.info(f"Successfully parsed AI response with {len(parsed_response['recommendations'])} recommendations and score {parsed_response['security_score']}/100")
             return parsed_response
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse AI JSON response: {str(e)}")
             # Return manual parsing fallback
-            return self._manual_parse_response(ai_response)
+            return self._manual_parse_response(ai_response, scanner_score)
     
     def _manual_parse_response(self, response: str) -> Dict[str, Any]:
         """Manually parse AI response when JSON parsing fails"""
@@ -418,11 +437,42 @@ class AIAnalysisService:
         try:
             logger.info("Getting AI-powered recommendations for scan results")
             
-            # Get AI-powered recommendations
+            # FIRST: Calculate the security score using RiskScoringModel
+            from ai_analyzer.ml.risk_scoring.model import RiskScoringModel
+            risk_model = RiskScoringModel()
+            
+            # Prepare scan data for scoring
+            scan_data = {}
+            for result in scan_results:
+                category = result.category
+                if category not in scan_data:
+                    scan_data[category] = []
+                scan_data[category].append({
+                    'name': result.name,
+                    'severity': result.severity,
+                    'details': result.details
+                })
+            
+            # Calculate the risk score
+            risk_results = risk_model.calculate_risk_score(scan_data)
+            scanner_score = risk_results['overall_score']
+            
+            logger.info(f"Scanner calculated security score: {scanner_score}/100")
+            
+            # Get AI-powered recommendations WITH THE SCANNER SCORE
             ai_recommendations = self.enhanced_agent.analyze_scan_results_with_ai(
                 scan_results, 
-                self.scan.target_url
+                self.scan.target_url,
+                scanner_score  # Pass the scanner's calculated score
             )
+            
+            # Ensure the AI uses the scanner score
+            if 'security_score' in ai_recommendations:
+                if ai_recommendations['security_score'] != scanner_score:
+                    logger.warning(f"AI changed security score from {scanner_score} to {ai_recommendations['security_score']}, overriding to use scanner score")
+                    ai_recommendations['security_score'] = scanner_score
+            else:
+                ai_recommendations['security_score'] = scanner_score
             
             # Store enhanced recommendations in database
             if 'recommendations' in ai_recommendations:
@@ -600,6 +650,10 @@ class AIAnalysisService:
     def _run_risk_scoring(self, scan_results, analysis):
         """Run risk scoring analysis with better error handling"""
         try:
+            # Import the risk scoring model
+            from ai_analyzer.ml.risk_scoring.model import RiskScoringModel
+            risk_model = RiskScoringModel()
+            
             all_data = {}
             for result in scan_results:
                 try:
@@ -613,18 +667,28 @@ class AIAnalysisService:
                 except Exception as e:
                     logger.warning(f"Error processing result {result.id}: {str(e)}")
             
-            risk_results = self._calculate_risk_score(all_data)
+            # Use the RiskScoringModel to calculate the score
+            risk_results = risk_model.calculate_risk_score(all_data)
             
-            # Create overall recommendation
+            # Extract the calculated score
+            overall_score = risk_results['overall_score']
+            
+            # Create overall recommendation with the CORRECT score
             try:
                 AIRecommendation.objects.create(
                     analysis=analysis,
                     title=f"Overall Security Assessment",
-                    description=f"The security score for {self.scan.target_url} is {risk_results['overall_score']}/100",
-                    severity=self._get_severity_from_score(risk_results['overall_score']),
+                    description=f"Based on our security scan, {self.scan.target_url} has a security score of {overall_score}/100",
+                    severity=self._get_severity_from_score(overall_score),
                     recommendation=risk_results['improvement_suggestions'],
                     recommendation_type='summary',
-                    confidence_score=0.95
+                    confidence_score=0.95,
+                    metadata={
+                        'security_score': overall_score,
+                        'category_scores': risk_results.get('category_scores', {}),
+                        'severity_counts': risk_results.get('severity_counts', {}),
+                        'overall_severity': risk_results.get('overall_severity', 'medium')
+                    }
                 )
             except Exception as e:
                 logger.error(f"Error creating overall recommendation: {str(e)}")
