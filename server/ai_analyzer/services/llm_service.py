@@ -1,9 +1,11 @@
 # backend/ai_analyzer/services/llm_service.py
+# UPDATED VERSION - Replace your llm_service.py with this
 
 import logging
 import json
 import requests
 import os
+import openai
 from django.conf import settings
 from typing import Dict, Any, List, Optional
 
@@ -19,10 +21,19 @@ class LLMService:
         
         if self.provider == 'openai':
             self.api_key = getattr(settings, 'OPENAI_API_KEY', '')
-            self.model = getattr(settings, 'OPENAI_MODEL_NAME', 'gpt-4')
+            self.model = getattr(settings, 'OPENAI_MODEL_NAME', 'gpt-3.5-turbo')  # Updated default
             if not self.api_key:
                 logger.error("OpenAI API key not configured")
                 raise ValueError("OpenAI API key not configured")
+            
+            # Initialize OpenAI client with new v1.0+ API
+            try:
+                self.openai_client = openai.OpenAI(api_key=self.api_key)
+                logger.info("OpenAI client initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+                self.openai_client = None
+                
         elif self.provider == 'ollama':
             self.base_url = getattr(settings, 'OLLAMA_BASE_URL', 'http://localhost:11434')
             self.model = getattr(settings, 'OLLAMA_MODEL_NAME', 'llama3')
@@ -126,10 +137,10 @@ class LLMService:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
     
     def _get_openai_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        """Get response from OpenAI API"""
+        """Get response from OpenAI API using v1.0+ format"""
         try:
-            import openai
-            openai.api_key = self.api_key
+            if not self.openai_client:
+                raise Exception("OpenAI client not initialized")
             
             messages = []
             if system_prompt:
@@ -137,13 +148,17 @@ class LLMService:
             
             messages.append({"role": "user", "content": prompt})
             
-            response = openai.ChatCompletion.create(
+            # Use new OpenAI API v1.0+ format
+            response = self.openai_client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.2  # Use low temperature for more consistent, deterministic outputs
+                temperature=0.2,  # Use low temperature for more consistent, deterministic outputs
+                max_tokens=2000
             )
             
+            # Extract response using new API format
             return response.choices[0].message.content
+            
         except Exception as e:
             logger.exception(f"Error getting OpenAI response: {str(e)}")
             raise

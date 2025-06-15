@@ -1,17 +1,17 @@
 # backend/ai_analyzer/services/ai_analysis.py
+# COMPLETE WORKING VERSION - Replace your entire ai_analysis.py file with this
 
 import logging
 import time
 import traceback
 import json
+import openai
 from typing import Dict, List, Any, Optional
+from django.conf import settings
 from ..models import AIAnalysis, AIRecommendation
 from scanner.models import ScanResult
 from integrations.shodan_service import ShodanService
 from ai_analyzer.services.threat_intelligence import ThreatIntelligence
-from ai_analyzer.services.llm_service import LLMService
-import openai
-from django.conf import settings
 
 # Set up more detailed logging
 logger = logging.getLogger(__name__)
@@ -22,43 +22,53 @@ class EnhancedAIAgent:
     """
     
     def __init__(self):
-        # Initialize OpenAI client with new v1.0+ API
-        self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        # Initialize OpenAI client directly - no more LLMService dependency
+        try:
+            api_key = getattr(settings, 'OPENAI_API_KEY', None)
+            if not api_key:
+                logger.error("OPENAI_API_KEY not found in settings")
+                self.client = None
+            else:
+                self.client = openai.OpenAI(api_key=api_key)
+                logger.info("OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+            self.client = None
     
     def analyze_scan_results_with_ai(self, scan_results, target_url: str) -> Dict[str, Any]:
         """
         Direct AI analysis of raw scan results for actionable recommendations
         """
         try:
+            if not self.client:
+                logger.warning("OpenAI client not available, returning fallback response")
+                return self._create_fallback_response(scan_results, target_url)
+            
             # Format scan results for AI consumption
             formatted_results = self._format_scan_results_for_ai(scan_results, target_url)
             
             # Create structured prompt
             prompt = self._create_comprehensive_prompt(formatted_results)
             
-            # Get AI analysis using new OpenAI API v1.0+
-            ai_response = self._get_llm_response_v2(
-                prompt, 
-                system_prompt="You are a cybersecurity expert providing actionable vulnerability remediation advice."
-            )
+            # Get AI analysis using OpenAI API v1.0+
+            ai_response = self._get_llm_response(prompt)
             
             # Parse and structure the response
             return self._parse_ai_remediation_response(ai_response)
             
         except Exception as e:
             logger.exception(f"Error in AI agent analysis: {str(e)}")
-            return {
-                "error": str(e),
-                "recommendations": [],
-                "risk_assessment": "unknown"
-            }
+            return self._create_fallback_response(scan_results, target_url)
     
-    def _get_llm_response_v2(self, prompt: str, system_prompt: str = "") -> str:
+    def _get_llm_response(self, prompt: str) -> str:
         """
-        Get LLM response using OpenAI API v1.0+ (replaces old LLMService)
+        Get LLM response using OpenAI API v1.0+
         """
         try:
             logger.info("Requesting AI analysis from OpenAI")
+            
+            if not self.client:
+                raise Exception("OpenAI client not initialized")
             
             # Use new OpenAI API v1.0+
             response = self.client.chat.completions.create(
@@ -66,7 +76,7 @@ class EnhancedAIAgent:
                 messages=[
                     {
                         "role": "system",
-                        "content": system_prompt or "You are a helpful cybersecurity expert."
+                        "content": "You are a cybersecurity expert providing actionable vulnerability remediation advice. Always respond with valid JSON."
                     },
                     {
                         "role": "user",
@@ -74,32 +84,91 @@ class EnhancedAIAgent:
                     }
                 ],
                 max_tokens=2000,
-                temperature=0.3,
-                response_format={"type": "json_object"}  # Ensures JSON response
+                temperature=0.3
             )
             
             # Extract response using new API format
             ai_response = response.choices[0].message.content
-            logger.info("Successfully received AI response")
+            logger.info(f"Successfully received AI response: {len(ai_response)} characters")
             
             return ai_response
             
         except Exception as e:
             logger.error(f"Error getting LLM response: {str(e)}")
-            # Return a structured error response
-            return json.dumps({
-                "error": f"AI analysis failed: {str(e)}",
-                "overall_risk_level": "Medium",
-                "recommendations": [
-                    {
-                        "issue_name": "AI Analysis Unavailable",
-                        "severity": "info",
-                        "risk_assessment": "AI analysis could not be completed at this time",
-                        "remediation_steps": ["Review scan results manually", "Run scan again later"],
-                        "priority": "low"
-                    }
-                ]
-            })
+            raise
+    
+    def _create_fallback_response(self, scan_results, target_url: str) -> Dict[str, Any]:
+        """Create a fallback response when AI is unavailable"""
+        logger.info("Creating fallback AI response based on scan results")
+        
+        # Count findings by severity
+        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        recommendations = []
+        
+        for result in scan_results:
+            severity = result.severity.lower() if result.severity else 'info'
+            if severity in severity_counts:
+                severity_counts[severity] += 1
+            
+            # Create basic recommendations based on scan results
+            if result.category == 'headers' and severity in ['high', 'critical']:
+                recommendations.append({
+                    "issue_name": f"Missing Security Header: {result.name}",
+                    "category": "headers",
+                    "severity": severity,
+                    "risk_assessment": result.description or "Security header missing or misconfigured",
+                    "business_impact": "Potential security vulnerabilities that could lead to data breaches",
+                    "technical_details": "HTTP security headers help protect against common attacks",
+                    "remediation_steps": [
+                        "Configure web server to include security headers",
+                        "Test header implementation",
+                        "Verify headers are properly set"
+                    ],
+                    "priority": "high" if severity == "critical" else "medium",
+                    "estimated_effort": "1-2 hours"
+                })
+            
+            elif result.category == 'ssl' and severity in ['high', 'critical']:
+                recommendations.append({
+                    "issue_name": f"SSL/TLS Issue: {result.name}",
+                    "category": "ssl",
+                    "severity": severity,
+                    "risk_assessment": result.description or "SSL/TLS configuration issue detected",
+                    "business_impact": "Encrypted communications may be compromised",
+                    "technical_details": "SSL/TLS configuration needs improvement",
+                    "remediation_steps": [
+                        "Update SSL/TLS configuration",
+                        "Use strong cipher suites",
+                        "Test SSL configuration"
+                    ],
+                    "priority": "high",
+                    "estimated_effort": "2-4 hours"
+                })
+        
+        # Calculate basic risk level
+        total_critical_high = severity_counts["critical"] + severity_counts["high"]
+        if total_critical_high > 5:
+            risk_level = "Critical"
+        elif total_critical_high > 2:
+            risk_level = "High"
+        elif severity_counts["medium"] > 10:
+            risk_level = "Medium"
+        else:
+            risk_level = "Low"
+        
+        return {
+            "overall_risk_level": risk_level,
+            "security_score": max(20, 100 - (severity_counts["critical"] * 15 + severity_counts["high"] * 8)),
+            "executive_summary": f"Security analysis completed for {target_url}. Found {sum(severity_counts.values())} total issues.",
+            "recommendations": recommendations[:10],  # Limit to top 10
+            "quick_wins": [
+                "Address critical security headers",
+                "Update SSL/TLS configuration",
+                "Review and fix high-priority issues"
+            ],
+            "long_term_strategy": "Implement regular security scanning and monitoring",
+            "ai_fallback": True
+        }
     
     def _format_scan_results_for_ai(self, scan_results, target_url: str) -> Dict[str, Any]:
         """Format scan results into a structure the AI can easily understand"""
@@ -172,16 +241,8 @@ Please provide a JSON response with this exact structure:
                 "Step 2: Another specific action",
                 "Step 3: Verification step"
             ],
-            "code_examples": {{
-                "description": "What this configuration does",
-                "before": "Current vulnerable configuration",
-                "after": "Secure configuration example"
-            }},
             "priority": "immediate|high|medium|low",
-            "estimated_effort": "30 minutes|2 hours|1 day|1 week",
-            "verification_steps": [
-                "How to verify the fix worked"
-            ]
+            "estimated_effort": "30 minutes|2 hours|1 day|1 week"
         }}
     ],
     "quick_wins": [
@@ -210,18 +271,22 @@ Focus on the most critical issues first and provide specific, actionable steps.
     def _parse_ai_remediation_response(self, ai_response: str) -> Dict[str, Any]:
         """Parse AI response into structured recommendations"""
         try:
-            # Try to parse as JSON first
-            parsed_response = json.loads(ai_response)
+            # Try to extract and parse JSON from response
+            json_start = ai_response.find('{')
+            json_end = ai_response.rfind('}') + 1
             
-            # Validate required fields and add defaults
-            if 'recommendations' not in parsed_response:
-                parsed_response['recommendations'] = []
+            if json_start >= 0 and json_end > json_start:
+                json_str = ai_response[json_start:json_end]
+                parsed_response = json.loads(json_str)
+            else:
+                # Try parsing the entire response as JSON
+                parsed_response = json.loads(ai_response)
             
-            if 'overall_risk_level' not in parsed_response:
-                parsed_response['overall_risk_level'] = 'Medium'
-            
-            if 'security_score' not in parsed_response:
-                parsed_response['security_score'] = 50
+            # Validate and add defaults
+            parsed_response.setdefault('recommendations', [])
+            parsed_response.setdefault('overall_risk_level', 'Medium')
+            parsed_response.setdefault('security_score', 50)
+            parsed_response.setdefault('executive_summary', 'Security analysis completed')
             
             # Ensure each recommendation has required fields
             for rec in parsed_response['recommendations']:
@@ -229,7 +294,6 @@ Focus on the most critical issues first and provide specific, actionable steps.
                 rec.setdefault('priority', 'medium')
                 rec.setdefault('estimated_effort', 'unknown')
                 rec.setdefault('remediation_steps', [])
-                rec.setdefault('verification_steps', [])
                 rec.setdefault('business_impact', 'Security improvement recommended')
                 rec.setdefault('technical_details', 'See remediation steps for details')
             
@@ -238,70 +302,40 @@ Focus on the most critical issues first and provide specific, actionable steps.
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse AI JSON response: {str(e)}")
-            # Fallback: create basic recommendations from text
+            # Return manual parsing fallback
             return self._manual_parse_response(ai_response)
     
     def _manual_parse_response(self, response: str) -> Dict[str, Any]:
         """Manually parse AI response when JSON parsing fails"""
         logger.info("Using manual parsing fallback for AI response")
         
-        # Extract key information from text response
-        lines = response.split('\n')
-        recommendations = []
-        
-        # Look for bullet points or numbered items that might be recommendations
-        current_rec = None
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            # Look for recommendation indicators
-            if any(indicator in line.lower() for indicator in ['recommend', 'fix', 'implement', 'address']):
-                if current_rec:
-                    recommendations.append(current_rec)
-                
-                current_rec = {
-                    "issue_name": line[:50] + "..." if len(line) > 50 else line,
-                    "severity": "medium",
-                    "risk_assessment": line,
-                    "remediation_steps": [line],
-                    "priority": "medium",
-                    "estimated_effort": "unknown"
-                }
-            elif current_rec and line:
-                # Add additional context to current recommendation
-                current_rec["risk_assessment"] += " " + line
-        
-        # Add the last recommendation
-        if current_rec:
-            recommendations.append(current_rec)
-        
-        # If no recommendations found, create a basic one
-        if not recommendations:
-            recommendations.append({
-                "issue_name": "Manual Review Required",
-                "severity": "medium",
-                "risk_assessment": "AI analysis completed but requires manual review of results",
-                "remediation_steps": [
-                    "Review scan findings manually",
-                    "Prioritize critical and high severity issues",
-                    "Implement security best practices"
-                ],
-                "priority": "medium",
-                "estimated_effort": "varies"
-            })
-        
         return {
             "overall_risk_level": "Medium",
             "security_score": 50,
-            "recommendations": recommendations,
-            "executive_summary": "AI analysis completed with manual parsing",
+            "executive_summary": "AI analysis completed but required manual parsing",
+            "recommendations": [
+                {
+                    "issue_name": "Manual Review Required",
+                    "category": "general",
+                    "severity": "medium",
+                    "risk_assessment": "AI analysis completed but requires manual review of results",
+                    "business_impact": "Security recommendations need manual interpretation",
+                    "technical_details": "Review scan findings manually for specific technical details",
+                    "remediation_steps": [
+                        "Review scan findings manually",
+                        "Prioritize critical and high severity issues",
+                        "Implement security best practices"
+                    ],
+                    "priority": "medium",
+                    "estimated_effort": "varies"
+                }
+            ],
             "quick_wins": ["Review and prioritize security findings"],
             "long_term_strategy": "Implement comprehensive security monitoring",
-            "fallback_used": True,
-            "raw_response": response[:500] + "..." if len(response) > 500 else response
+            "manual_parsing_used": True,
+            "raw_response_preview": response[:200] + "..." if len(response) > 200 else response
         }
+
 
 class AIAnalysisService:
     """Service for performing AI-based security analysis with improved error handling"""
@@ -311,8 +345,15 @@ class AIAnalysisService:
         self.start_time = time.time()
         
         # Initialize external services
-        self.threat_intel = ThreatIntelligence()
-        self.shodan = ShodanService()
+        try:
+            self.threat_intel = ThreatIntelligence()
+        except:
+            self.threat_intel = None
+            
+        try:
+            self.shodan = ShodanService()
+        except:
+            self.shodan = None
         
         # Initialize enhanced AI agent
         self.enhanced_agent = EnhancedAIAgent()
@@ -322,174 +363,58 @@ class AIAnalysisService:
         logger.info(f"Starting AI analysis for scan {self.scan.id}")
         
         try:
-            # Log scan details
-            logger.info(f"Scan details: target_url={self.scan.target_url}, scan_types={self.scan.scan_types}")
-            
-            # Get external threat intelligence data
-            try:
-                logger.info(f"Getting external threat intelligence for {self.scan.target_url}")
-                domain_intel = self.threat_intel.analyze_domain(self.scan.target_url)
-                ports_info = self.shodan.get_ports(self.scan.target_url)
-                
-                # Log summary of external data
-                logger.info(f"Domain intelligence found: {domain_intel is not None}")
-                logger.info(f"Ports information found: {ports_info is not None}")
-            except Exception as e:
-                logger.error(f"Error retrieving external threat intelligence: {str(e)}")
-                logger.error(traceback.format_exc())
-                # Continue with analysis even if external data retrieval fails
-            
             # Get all scan results
             scan_results = ScanResult.objects.filter(scan=self.scan)
-            
-            # Log scan results count
             result_count = scan_results.count()
+            
             logger.info(f"Found {result_count} scan results for analysis")
             
-            # If no results, return early
             if result_count == 0:
                 logger.warning(f"No scan results found for scan {self.scan.id}")
-                
-                # Create an empty analysis to indicate we processed it
-                AIAnalysis.objects.create(
-                    user=self.scan.user,
-                    scan_id=str(self.scan.id),
-                    scan_identifier=self.scan.target_url,
-                    analysis_type='no_data',
-                    analysis_result={'error': 'No scan results found to analyze'},
-                    confidence_score=0
-                )
+                self._create_empty_analysis()
                 return
             
-            # Log categories found
-            categories = scan_results.values_list('category', flat=True).distinct()
-            logger.info(f"Categories found in scan results: {list(categories)}")
-            
-            # Create a single analysis record for this scan
+            # Create analysis record
             analysis = AIAnalysis.objects.create(
                 user=self.scan.user,
                 scan_id=str(self.scan.id),
                 scan_identifier=self.scan.target_url,
                 analysis_type='combined',
                 analysis_result={
+                    'enhanced_ai_analysis': {},
                     'threat_detection': {},
                     'anomaly_detection': {},
-                    'risk_scoring': {},
-                    'enhanced_ai_analysis': {},  # New field for enhanced AI analysis
-                    'external_intelligence': {
-                        'domain_intel': domain_intel if 'domain_intel' in locals() else {},
-                        'ports_info': ports_info if 'ports_info' in locals() else {}
-                    }
+                    'risk_scoring': {}
                 },
                 confidence_score=0.85
             )
             
-            # Run threat detection
-            logger.info("Starting threat detection analysis")
-            try:
-                threat_results = self._run_threat_detection(scan_results, analysis)
-                logger.info("Threat detection completed successfully")
-                
-                # Update analysis with threat results
-                analysis.analysis_result['threat_detection'] = threat_results
-                analysis.save()
-            except Exception as e:
-                logger.error(f"Error in threat detection: {str(e)}")
-                logger.error(traceback.format_exc())
-                # Continue with other analyses even if this one fails
-            
-            # Run anomaly detection
-            logger.info("Starting anomaly detection analysis")
-            try:
-                anomaly_results = self._run_anomaly_detection(scan_results, analysis)
-                logger.info("Anomaly detection completed successfully")
-                
-                # Update analysis with anomaly results
-                analysis.analysis_result['anomaly_detection'] = anomaly_results
-                analysis.save()
-            except Exception as e:
-                logger.error(f"Error in anomaly detection: {str(e)}")
-                logger.error(traceback.format_exc())
-                # Continue with other analyses even if this one fails
-            
-            # Run risk scoring
-            logger.info("Starting risk scoring analysis")
-            try:
-                risk_results = self._run_risk_scoring(scan_results, analysis)
-                logger.info("Risk scoring completed successfully")
-                
-                # Update analysis with risk scoring results
-                analysis.analysis_result['risk_scoring'] = risk_results
-                analysis.save()
-            except Exception as e:
-                logger.error(f"Error in risk scoring: {str(e)}")
-                logger.error(traceback.format_exc())
-            
-            # NEW: Run enhanced AI analysis for direct actionable recommendations
+            # Run enhanced AI analysis FIRST (most important)
             logger.info("Starting enhanced AI analysis")
             try:
                 enhanced_ai_results = self._run_enhanced_ai_analysis(scan_results, analysis)
-                logger.info("Enhanced AI analysis completed successfully")
-                
-                # Update analysis with enhanced AI results
                 analysis.analysis_result['enhanced_ai_analysis'] = enhanced_ai_results
                 analysis.save()
+                logger.info("Enhanced AI analysis completed successfully")
             except Exception as e:
                 logger.error(f"Error in enhanced AI analysis: {str(e)}")
                 logger.error(traceback.format_exc())
             
-            # Update confidence score based on all analyses
-            try:
-                # Assign the highest confidence score from all analyses
-                confidence_scores = [
-                    analysis.analysis_result.get('threat_detection', {}).get('confidence', 0),
-                    analysis.analysis_result.get('anomaly_detection', {}).get('confidence', 0),
-                    analysis.analysis_result.get('risk_scoring', {}).get('confidence', 0.85),
-                    0.9 if analysis.analysis_result.get('enhanced_ai_analysis', {}).get('recommendations') else 0
-                ]
-                analysis.confidence_score = max(confidence_scores)
-                analysis.save()
-            except Exception as e:
-                logger.error(f"Error updating confidence score: {str(e)}")
+            # Run other analyses
+            self._run_other_analyses(scan_results, analysis)
             
-            # Log completion time
+            # Update final confidence score
+            self._update_confidence_score(analysis)
+            
             elapsed_time = time.time() - self.start_time
             logger.info(f"Completed AI analysis for scan {self.scan.id} in {elapsed_time:.2f} seconds")
             
         except Exception as e:
             logger.exception(f"Critical error in AI analysis for scan {self.scan.id}: {str(e)}")
-            
-            # Create an error analysis entry so frontend knows analysis attempted but failed
-            try:
-                # Check if we already have an analysis record for this scan
-                existing_analysis = AIAnalysis.objects.filter(scan_id=str(self.scan.id)).first()
-                
-                if existing_analysis:
-                    # Update existing analysis with error info
-                    existing_analysis.analysis_result = {
-                        'error': str(e),
-                        'traceback': traceback.format_exc()
-                    }
-                    existing_analysis.save()
-                else:
-                    # Create new analysis with error info
-                    AIAnalysis.objects.create(
-                        user=self.scan.user,
-                        scan_id=str(self.scan.id),
-                        scan_identifier=self.scan.target_url,
-                        analysis_type='error',
-                        analysis_result={'error': str(e), 'traceback': traceback.format_exc()},
-                        confidence_score=0
-                    )
-            except Exception as inner_e:
-                logger.error(f"Failed to create error analysis record: {str(inner_e)}")
-            
-            raise
+            self._create_error_analysis(str(e))
     
     def _run_enhanced_ai_analysis(self, scan_results, analysis):
-        """
-        NEW METHOD: Enhanced AI analysis that provides direct actionable recommendations
-        """
+        """Enhanced AI analysis that provides direct actionable recommendations"""
         try:
             logger.info("Getting AI-powered recommendations for scan results")
             
@@ -504,16 +429,6 @@ class AIAnalysisService:
                 recs_created = 0
                 for rec in ai_recommendations['recommendations']:
                     try:
-                        # Prepare metadata
-                        metadata = {
-                            'business_impact': rec.get('business_impact', ''),
-                            'technical_details': rec.get('technical_details', ''),
-                            'code_examples': rec.get('code_examples', {}),
-                            'verification_steps': rec.get('verification_steps', []),
-                            'implementation_complexity': self._assess_implementation_complexity(rec),
-                            'estimated_time': self._estimate_implementation_time(rec)
-                        }
-                        
                         # Create recommendation record
                         AIRecommendation.objects.create(
                             analysis=analysis,
@@ -523,7 +438,13 @@ class AIAnalysisService:
                             recommendation=json.dumps(rec.get('remediation_steps', [])),
                             recommendation_type='ai_enhanced',
                             confidence_score=0.9,
-                            metadata=metadata
+                            metadata={
+                                'business_impact': rec.get('business_impact', ''),
+                                'technical_details': rec.get('technical_details', ''),
+                                'priority': rec.get('priority', 'medium'),
+                                'estimated_effort': rec.get('estimated_effort', 'unknown'),
+                                'category': rec.get('category', 'general')
+                            }
                         )
                         recs_created += 1
                     except Exception as e:
@@ -531,66 +452,80 @@ class AIAnalysisService:
                 
                 logger.info(f"Created {recs_created} enhanced AI recommendations")
             
-            # Add metadata about the scan
-            ai_recommendations["metadata"] = {
-                "total_scan_results": scan_results.count(),
-                "categories_scanned": list(scan_results.values_list('category', flat=True).distinct()),
-                "severity_distribution": {
-                    severity: scan_results.filter(severity=severity).count()
-                    for severity in ['critical', 'high', 'medium', 'low', 'info']
-                }
-            }
-            
             return ai_recommendations
             
         except Exception as e:
             logger.exception(f"Error in enhanced AI analysis: {str(e)}")
             return {"error": str(e), "recommendations": []}
     
-    def _assess_implementation_complexity(self, recommendation: Dict[str, Any]) -> str:
-        """Assess how complex a recommendation is to implement"""
-        category = recommendation.get('category', '').lower()
+    def _run_other_analyses(self, scan_results, analysis):
+        """Run the other analysis methods"""
+        try:
+            threat_results = self._run_threat_detection(scan_results, analysis)
+            analysis.analysis_result['threat_detection'] = threat_results
+            analysis.save()
+        except Exception as e:
+            logger.error(f"Error in threat detection: {str(e)}")
         
-        complexity_map = {
-            'headers': 'Low',     # Usually just server config
-            'ssl': 'Medium',      # May require certificate renewal
-            'content': 'High',    # May require code changes
-            'configuration': 'Low' # Usually config changes
-        }
+        try:
+            anomaly_results = self._run_anomaly_detection(scan_results, analysis)
+            analysis.analysis_result['anomaly_detection'] = anomaly_results
+            analysis.save()
+        except Exception as e:
+            logger.error(f"Error in anomaly detection: {str(e)}")
         
-        return complexity_map.get(category, 'Medium')
+        try:
+            risk_results = self._run_risk_scoring(scan_results, analysis)
+            analysis.analysis_result['risk_scoring'] = risk_results
+            analysis.save()
+        except Exception as e:
+            logger.error(f"Error in risk scoring: {str(e)}")
     
-    def _estimate_implementation_time(self, recommendation: Dict[str, Any]) -> str:
-        """Estimate time needed to implement a recommendation"""
-        complexity = self._assess_implementation_complexity(recommendation)
-        severity = recommendation.get('severity', 'medium').lower()
-        
-        time_estimates = {
-            ('Low', 'critical'): '1-2 hours',
-            ('Low', 'high'): '2-4 hours',
-            ('Low', 'medium'): '1-3 hours',
-            ('Low', 'low'): '30 minutes - 1 hour',
-            ('Medium', 'critical'): '4-8 hours',
-            ('Medium', 'high'): '2-6 hours',
-            ('Medium', 'medium'): '1-4 hours',
-            ('Medium', 'low'): '1-2 hours',
-            ('High', 'critical'): '1-2 days',
-            ('High', 'high'): '4-8 hours',
-            ('High', 'medium'): '2-6 hours',
-            ('High', 'low'): '2-4 hours'
-        }
-        
-        return time_estimates.get((complexity, severity), '2-4 hours')
+    def _update_confidence_score(self, analysis):
+        """Update confidence score based on all analyses"""
+        try:
+            confidence_scores = [
+                analysis.analysis_result.get('threat_detection', {}).get('confidence', 0),
+                analysis.analysis_result.get('anomaly_detection', {}).get('confidence', 0),
+                analysis.analysis_result.get('risk_scoring', {}).get('confidence', 0.85),
+                0.9 if analysis.analysis_result.get('enhanced_ai_analysis', {}).get('recommendations') else 0
+            ]
+            analysis.confidence_score = max(confidence_scores)
+            analysis.save()
+        except Exception as e:
+            logger.error(f"Error updating confidence score: {str(e)}")
     
-    # ... [Rest of your existing methods remain the same] ...
+    def _create_empty_analysis(self):
+        """Create empty analysis when no scan results found"""
+        AIAnalysis.objects.create(
+            user=self.scan.user,
+            scan_id=str(self.scan.id),
+            scan_identifier=self.scan.target_url,
+            analysis_type='no_data',
+            analysis_result={'error': 'No scan results found to analyze'},
+            confidence_score=0
+        )
+    
+    def _create_error_analysis(self, error_message):
+        """Create error analysis entry"""
+        try:
+            AIAnalysis.objects.create(
+                user=self.scan.user,
+                scan_id=str(self.scan.id),
+                scan_identifier=self.scan.target_url,
+                analysis_type='error',
+                analysis_result={
+                    'error': error_message,
+                    'traceback': traceback.format_exc()
+                },
+                confidence_score=0
+            )
+        except Exception as inner_e:
+            logger.error(f"Failed to create error analysis record: {str(inner_e)}")
     
     def _run_threat_detection(self, scan_results, analysis):
         """Run threat detection analysis with better error handling"""
         try:
-            # Log start of specific analysis
-            logger.info(f"Preparing data for threat detection analysis")
-            
-            # Prepare data for threat detection
             headers_data = []
             for result in scan_results.filter(category='headers'):
                 try:
@@ -598,24 +533,12 @@ class AIAnalysisService:
                 except Exception as e:
                     logger.warning(f"Error processing header result {result.id}: {str(e)}")
             
-            # Log headers data count
-            logger.info(f"Processing {len(headers_data)} header results")
-            
-            # No header data to analyze
             if not headers_data:
-                logger.info("No header data found for threat detection")
                 return {'threat_count': 0, 'threats': [], 'confidence': 0.5}
             
-            # Perform threat detection
-            logger.info("Performing threat detection analysis")
             threat_results = self._detect_threats(headers_data)
             
-            # Log threat detection results
-            logger.info(f"Found {threat_results.get('threat_count', 0)} potential threats")
-            
-            # Generate recommendations based on threats
-            logger.info("Generating threat-based recommendations")
-            recs_created = 0
+            # Create recommendations
             for threat in threat_results.get('threats', []):
                 try:
                     AIRecommendation.objects.create(
@@ -627,27 +550,19 @@ class AIAnalysisService:
                         recommendation_type='security',
                         confidence_score=threat['confidence']
                     )
-                    recs_created += 1
                 except Exception as e:
-                    logger.error(f"Error creating recommendation for threat {threat['type']}: {str(e)}")
+                    logger.error(f"Error creating recommendation: {str(e)}")
             
-            logger.info(f"Created {recs_created} threat recommendations")
-            
-            # Add confidence to the results
             threat_results['confidence'] = 0.85 if threat_results.get('threats') else 0.5
-            
             return threat_results
                 
         except Exception as e:
             logger.exception(f"Error in threat detection: {str(e)}")
-            raise
+            return {'threat_count': 0, 'threats': [], 'confidence': 0, 'error': str(e)}
     
     def _run_anomaly_detection(self, scan_results, analysis):
         """Run anomaly detection analysis with better error handling"""
         try:
-            logger.info("Preparing data for anomaly detection analysis")
-            
-            # Extract data for anomaly detection
             ssl_data = []
             for result in scan_results.filter(category='ssl'):
                 try:
@@ -655,24 +570,12 @@ class AIAnalysisService:
                 except Exception as e:
                     logger.warning(f"Error processing SSL result {result.id}: {str(e)}")
             
-            # Log SSL data count
-            logger.info(f"Processing {len(ssl_data)} SSL results")
-            
-            # No SSL data to analyze
             if not ssl_data:
-                logger.info("No SSL data found for anomaly detection")
                 return {'anomaly_count': 0, 'anomalies': [], 'confidence': 0.5}
             
-            # Perform anomaly detection
-            logger.info("Performing anomaly detection analysis")
             anomaly_results = self._detect_anomalies(ssl_data)
             
-            # Log anomaly detection results
-            logger.info(f"Found {anomaly_results.get('anomaly_count', 0)} potential anomalies")
-            
-            # Generate recommendations for anomalies
-            logger.info("Generating anomaly-based recommendations")
-            recs_created = 0
+            # Create recommendations
             for anomaly in anomaly_results.get('anomalies', []):
                 try:
                     AIRecommendation.objects.create(
@@ -684,27 +587,19 @@ class AIAnalysisService:
                         recommendation_type='security',
                         confidence_score=anomaly['score']
                     )
-                    recs_created += 1
                 except Exception as e:
-                    logger.error(f"Error creating recommendation for anomaly in {anomaly['component']}: {str(e)}")
+                    logger.error(f"Error creating recommendation: {str(e)}")
             
-            logger.info(f"Created {recs_created} anomaly recommendations")
-            
-            # Add confidence to the results
             anomaly_results['confidence'] = 0.85 if anomaly_results.get('anomalies') else 0.5
-            
             return anomaly_results
                 
         except Exception as e:
             logger.exception(f"Error in anomaly detection: {str(e)}")
-            raise
+            return {'anomaly_count': 0, 'anomalies': [], 'confidence': 0, 'error': str(e)}
     
     def _run_risk_scoring(self, scan_results, analysis):
         """Run risk scoring analysis with better error handling"""
         try:
-            logger.info("Preparing data for risk scoring analysis")
-            
-            # Collect all results for risk scoring
             all_data = {}
             for result in scan_results:
                 try:
@@ -716,21 +611,11 @@ class AIAnalysisService:
                         'details': result.details
                     })
                 except Exception as e:
-                    logger.warning(f"Error processing result {result.id} for risk scoring: {str(e)}")
+                    logger.warning(f"Error processing result {result.id}: {str(e)}")
             
-            # Log category counts
-            for category, items in all_data.items():
-                logger.info(f"Category '{category}': {len(items)} items")
-            
-            # Calculate risk score
-            logger.info("Calculating risk scores")
             risk_results = self._calculate_risk_score(all_data)
             
-            # Log risk scoring results
-            logger.info(f"Overall security score: {risk_results.get('overall_score', 0)}/100")
-            
-            # Generate overall recommendation
-            logger.info("Generating overall risk recommendation")
+            # Create overall recommendation
             try:
                 AIRecommendation.objects.create(
                     analysis=analysis,
@@ -741,26 +626,21 @@ class AIAnalysisService:
                     recommendation_type='summary',
                     confidence_score=0.95
                 )
-                logger.info("Created overall risk recommendation")
             except Exception as e:
-                logger.error(f"Error creating overall risk recommendation: {str(e)}")
+                logger.error(f"Error creating overall recommendation: {str(e)}")
             
-            # Add confidence to the results
             risk_results['confidence'] = 0.95
-            
             return risk_results
                 
         except Exception as e:
             logger.exception(f"Error in risk scoring: {str(e)}")
-            raise
+            return {'overall_score': 0, 'error': str(e), 'confidence': 0}
     
     def _detect_threats(self, headers_data):
         """Detect security threats in headers data"""
-        # This would be more sophisticated in a real implementation
         threats = []
         
         for header_item in headers_data:
-            # Missing security headers
             recommendation = header_item.get('recommendation', '')
             description = header_item.get('description', '')
             
@@ -798,11 +678,9 @@ class AIAnalysisService:
     
     def _detect_anomalies(self, ssl_data):
         """Detect anomalies in SSL configuration"""
-        # This would be more sophisticated in a real implementation
         anomalies = []
         
         for ssl_item in ssl_data:
-            # Check for weak cipher suites
             if 'cipher_suite' in ssl_item and 'weak' in ssl_item.get('cipher_suite', '').lower():
                 anomalies.append({
                     'component': 'SSL Cipher Suites',
@@ -812,7 +690,6 @@ class AIAnalysisService:
                     'score': 0.92
                 })
             
-            # Check for outdated SSL/TLS versions
             if 'current_protocol' in ssl_item and ssl_item.get('current_protocol') in ['SSLv3', 'TLSv1', 'TLSv1.1']:
                 anomalies.append({
                     'component': 'SSL/TLS Protocol',
@@ -822,7 +699,6 @@ class AIAnalysisService:
                     'score': 0.95
                 })
             
-            # Check for certificate expiration
             if 'expiry_date' in ssl_item and 'days_until_expiry' in ssl_item:
                 days = ssl_item.get('days_until_expiry', 0)
                 if days < 30:
@@ -841,9 +717,6 @@ class AIAnalysisService:
     
     def _calculate_risk_score(self, all_data):
         """Calculate overall security risk score"""
-        # This would be more sophisticated in a real implementation
-        
-        # Initialize scores by category
         category_scores = {
             'headers': 0,
             'ssl': 0,
@@ -851,7 +724,6 @@ class AIAnalysisService:
             'content': 0
         }
         
-        # Count findings by severity
         severity_counts = {
             'critical': 0,
             'high': 0,

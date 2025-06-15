@@ -1,4 +1,5 @@
-# server/ai_analyzer/services/openai_client.py
+# backend/ai_analyzer/services/openai_client.py
+# UPDATED VERSION - Replace your openai_client.py with this
 
 import os
 import logging
@@ -9,13 +10,24 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 class OpenAIClient:
-    """Client for interacting with OpenAI API."""
+    """Client for interacting with OpenAI API using v1.0+ format."""
     
     def __init__(self):
         """Initialize the OpenAI client with API key from settings."""
-        self.api_key = settings.OPENAI_API_KEY
-        openai.api_key = self.api_key
-        self.model = settings.OPENAI_MODEL_NAME  # e.g., "gpt-4"
+        self.api_key = getattr(settings, 'OPENAI_API_KEY', '')
+        self.model = getattr(settings, 'OPENAI_MODEL_NAME', 'gpt-3.5-turbo')  # Updated default
+        
+        if not self.api_key:
+            logger.error("OpenAI API key not configured")
+            self.client = None
+        else:
+            try:
+                # Use new OpenAI v1.0+ client initialization
+                self.client = openai.OpenAI(api_key=self.api_key)
+                logger.info("OpenAI client initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+                self.client = None
     
     def analyze_vulnerabilities(self, scan_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -28,20 +40,24 @@ class OpenAIClient:
             Dictionary containing analysis results
         """
         try:
+            if not self.client:
+                raise Exception("OpenAI client not initialized")
+            
             # Format the prompt with scan data
             prompt = self._format_vulnerability_prompt(scan_data)
             
-            # Call OpenAI API
-            response = openai.ChatCompletion.create(
+            # Call OpenAI API using v1.0+ format
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are a cybersecurity expert analyzing website vulnerabilities."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.1  # Low temperature for more deterministic responses
+                temperature=0.1,  # Low temperature for more deterministic responses
+                max_tokens=2000
             )
             
-            # Parse and return the analysis
+            # Parse and return the analysis using new response format
             return self._parse_vulnerability_analysis(response)
             
         except Exception as e:
@@ -59,20 +75,24 @@ class OpenAIClient:
             List of recommendation dictionaries
         """
         try:
+            if not self.client:
+                raise Exception("OpenAI client not initialized")
+            
             # Format the prompt with vulnerability data
             prompt = self._format_recommendation_prompt(vulnerabilities)
             
-            # Call OpenAI API
-            response = openai.ChatCompletion.create(
+            # Call OpenAI API using v1.0+ format
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are a cybersecurity expert providing actionable recommendations."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.2
+                temperature=0.2,
+                max_tokens=2000
             )
             
-            # Parse and return the recommendations
+            # Parse and return the recommendations using new response format
             return self._parse_recommendations(response)
             
         except Exception as e:
@@ -90,19 +110,24 @@ class OpenAIClient:
             Analysis of headers with recommendations
         """
         try:
+            if not self.client:
+                raise Exception("OpenAI client not initialized")
+            
             # Format headers for analysis
             headers_str = "\n".join([f"{k}: {v}" for k, v in headers.items()])
             prompt = f"Analyze the following HTTP security headers and identify any missing or misconfigured headers:\n\n{headers_str}"
             
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are a web security expert specializing in HTTP security headers."},
                     {"role": "user", "content": prompt}
-                ]
+                ],
+                temperature=0.2,
+                max_tokens=1500
             )
             
-            # Extract the analysis
+            # Extract the analysis using new response format
             analysis = response.choices[0].message.content
             
             # Return structured analysis
@@ -155,7 +180,8 @@ class OpenAIClient:
         return prompt
     
     def _parse_vulnerability_analysis(self, response: Any) -> Dict[str, Any]:
-        """Parse the OpenAI response into structured vulnerability analysis."""
+        """Parse the OpenAI response into structured vulnerability analysis using new API format."""
+        # Use new response format - response.choices[0].message.content
         content = response.choices[0].message.content
         
         # Simple parsing - in a real app, use more robust parsing or structured outputs
@@ -215,7 +241,8 @@ class OpenAIClient:
         return prompt
     
     def _parse_recommendations(self, response: Any) -> List[Dict[str, Any]]:
-        """Parse the OpenAI response into structured recommendations."""
+        """Parse the OpenAI response into structured recommendations using new API format."""
+        # Use new response format
         content = response.choices[0].message.content
         
         # In a real application, use more robust parsing
