@@ -3,182 +3,13 @@
 import logging
 import time
 import traceback
-import json
-from typing import Dict, List, Any, Optional
 from ..models import AIAnalysis, AIRecommendation
 from scanner.models import ScanResult
 from integrations.shodan_service import ShodanService
 from ai_analyzer.services.threat_intelligence import ThreatIntelligence
-from ai_analyzer.services.llm_service import LLMService
 
 # Set up more detailed logging
 logger = logging.getLogger(__name__)
-
-class EnhancedAIAgent:
-    """
-    Enhanced AI agent that provides direct, actionable vulnerability remediation advice
-    """
-    
-    def __init__(self):
-        self.llm_service = LLMService()
-    
-    def analyze_scan_results_with_ai(self, scan_results, target_url: str) -> Dict[str, Any]:
-        """
-        Direct AI analysis of raw scan results for actionable recommendations
-        """
-        try:
-            # Format scan results for AI consumption
-            formatted_results = self._format_scan_results_for_ai(scan_results, target_url)
-            
-            # Create structured prompt
-            prompt = self._create_comprehensive_prompt(formatted_results)
-            
-            # Get AI analysis
-            ai_response = self.llm_service._get_llm_response(
-                prompt, 
-                system_prompt="You are a cybersecurity expert providing actionable vulnerability remediation advice."
-            )
-            
-            # Parse and structure the response
-            return self._parse_ai_remediation_response(ai_response)
-            
-        except Exception as e:
-            logger.exception(f"Error in AI agent analysis: {str(e)}")
-            return {
-                "error": str(e),
-                "recommendations": [],
-                "risk_assessment": "unknown"
-            }
-    
-    def _format_scan_results_for_ai(self, scan_results, target_url: str) -> Dict[str, Any]:
-        """Format scan results into a structure the AI can easily understand"""
-        formatted = {
-            "target_url": target_url,
-            "scan_timestamp": scan_results.first().created_at.isoformat() if scan_results.exists() else None,
-            "findings": {}
-        }
-        
-        # Group findings by category
-        for result in scan_results:
-            category = result.category
-            if category not in formatted["findings"]:
-                formatted["findings"][category] = []
-            
-            formatted["findings"][category].append({
-                "name": result.name,
-                "severity": result.severity,
-                "description": result.description,
-                "details": result.details if hasattr(result, 'details') else {}
-            })
-        
-        return formatted
-    
-    def _create_comprehensive_prompt(self, formatted_results: Dict[str, Any]) -> str:
-        """Create a comprehensive prompt for actionable recommendations"""
-        prompt = f"""
-            You are a cybersecurity expert analyzing web security scan results. Provide detailed, actionable remediation advice.
-
-            TARGET: {formatted_results['target_url']}
-            SCAN DATE: {formatted_results.get('scan_timestamp', 'Unknown')}
-
-            SCAN RESULTS:
-            {json.dumps(formatted_results['findings'], indent=2)}
-
-            For each security issue found, provide:
-            1. **Risk Assessment**: What this vulnerability means and why it's dangerous
-            2. **Business Impact**: How this could affect the organization
-            3. **Technical Details**: Specific technical explanation
-            4. **Remediation Steps**: Step-by-step fix instructions
-            5. **Code Examples**: Actual configuration or code snippets where applicable
-            6. **Priority Level**: How urgent this fix is (Critical/High/Medium/Low)
-            7. **Verification**: How to test that the fix worked
-
-            Please structure your response as JSON in this format:
-            {{
-            "overall_risk_level": "Critical|High|Medium|Low",
-            "executive_summary": "Brief summary for non-technical stakeholders",
-            "total_issues": number,
-            "recommendations": [
-                {{
-                "issue_name": "Clear name of the issue",
-                "category": "headers|ssl|content|configuration",
-                "severity": "critical|high|medium|low",
-                "risk_assessment": "What this means and why it's dangerous",
-                "business_impact": "Impact on business operations",
-                "technical_details": "Technical explanation",
-                "remediation_steps": ["Step 1", "Step 2", "Step 3"],
-                "code_examples": {{
-                    "description": "What this code does",
-                    "code": "Actual configuration or code snippet"
-                }},
-                "priority": "critical|high|medium|low",
-                "verification_steps": ["How to verify the fix"],
-                "references": ["Relevant security standards or documentation"]
-                }}
-            ],
-            "quick_wins": ["List of easiest fixes to implement first"],
-            "long_term_strategy": "Recommendations for ongoing security improvements"
-            }}
-                """
-        return prompt
-    
-    def _parse_ai_remediation_response(self, ai_response: str) -> Dict[str, Any]:
-        """Parse AI response into structured recommendations"""
-        try:
-            # Try to extract JSON from response
-            json_start = ai_response.find('{')
-            json_end = ai_response.rfind('}') + 1
-            
-            if json_start >= 0 and json_end > json_start:
-                json_str = ai_response[json_start:json_end]
-                parsed_response = json.loads(json_str)
-                
-                # Validate required fields
-                if 'recommendations' in parsed_response:
-                    return parsed_response
-            
-            # Fallback: extract information manually
-            return self._manual_parse_response(ai_response)
-            
-        except Exception as e:
-            logger.error(f"Error parsing AI response: {str(e)}")
-            return {
-                "error": f"Failed to parse AI response: {str(e)}",
-                "raw_response": ai_response,
-                "recommendations": []
-            }
-    
-    def _manual_parse_response(self, response: str) -> Dict[str, Any]:
-        """Manually parse AI response when JSON parsing fails"""
-        lines = response.split('\n')
-        recommendations = []
-        current_rec = {}
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            # Look for section headers
-            if line.startswith("**") and line.endswith("**"):
-                section = line.replace("**", "").lower().replace(" ", "_")
-                current_rec[section] = ""
-            elif ":" in line and current_rec:
-                key, value = line.split(":", 1)
-                current_rec[key.lower().replace(" ", "_")] = value.strip()
-            elif current_rec:
-                # Append to the last section
-                last_key = list(current_rec.keys())[-1]
-                current_rec[last_key] += " " + line
-        
-        if current_rec:
-            recommendations.append(current_rec)
-        
-        return {
-            "overall_risk_level": "Medium",
-            "recommendations": recommendations,
-            "raw_response": response
-        }
 
 class AIAnalysisService:
     """Service for performing AI-based security analysis with improved error handling"""
@@ -190,9 +21,6 @@ class AIAnalysisService:
         # Initialize external services
         self.threat_intel = ThreatIntelligence()
         self.shodan = ShodanService()
-        
-        # Initialize enhanced AI agent
-        self.enhanced_agent = EnhancedAIAgent()
     
     def analyze(self):
         """Run all AI analyses on the scan results with detailed logging"""
@@ -242,7 +70,7 @@ class AIAnalysisService:
             categories = scan_results.values_list('category', flat=True).distinct()
             logger.info(f"Categories found in scan results: {list(categories)}")
             
-            # Create a single analysis record for this scan
+            # Create a single analysis record for this scan (to prevent duplicate scan_id issues)
             analysis = AIAnalysis.objects.create(
                 user=self.scan.user,
                 scan_id=str(self.scan.id),
@@ -252,7 +80,6 @@ class AIAnalysisService:
                     'threat_detection': {},
                     'anomaly_detection': {},
                     'risk_scoring': {},
-                    'enhanced_ai_analysis': {},  # New field for enhanced AI analysis
                     'external_intelligence': {
                         'domain_intel': domain_intel if 'domain_intel' in locals() else {},
                         'ports_info': ports_info if 'ports_info' in locals() else {}
@@ -302,27 +129,13 @@ class AIAnalysisService:
                 logger.error(f"Error in risk scoring: {str(e)}")
                 logger.error(traceback.format_exc())
             
-            # NEW: Run enhanced AI analysis for direct actionable recommendations
-            logger.info("Starting enhanced AI analysis")
-            try:
-                enhanced_ai_results = self._run_enhanced_ai_analysis(scan_results, analysis)
-                logger.info("Enhanced AI analysis completed successfully")
-                
-                # Update analysis with enhanced AI results
-                analysis.analysis_result['enhanced_ai_analysis'] = enhanced_ai_results
-                analysis.save()
-            except Exception as e:
-                logger.error(f"Error in enhanced AI analysis: {str(e)}")
-                logger.error(traceback.format_exc())
-            
             # Update confidence score based on all analyses
             try:
                 # Assign the highest confidence score from all analyses
                 confidence_scores = [
                     analysis.analysis_result.get('threat_detection', {}).get('confidence', 0),
                     analysis.analysis_result.get('anomaly_detection', {}).get('confidence', 0),
-                    analysis.analysis_result.get('risk_scoring', {}).get('confidence', 0.85),
-                    0.9 if analysis.analysis_result.get('enhanced_ai_analysis', {}).get('recommendations') else 0
+                    analysis.analysis_result.get('risk_scoring', {}).get('confidence', 0.85)
                 ]
                 analysis.confidence_score = max(confidence_scores)
                 analysis.save()
@@ -362,104 +175,6 @@ class AIAnalysisService:
                 logger.error(f"Failed to create error analysis record: {str(inner_e)}")
             
             raise
-    
-    def _run_enhanced_ai_analysis(self, scan_results, analysis):
-        """
-        NEW METHOD: Enhanced AI analysis that provides direct actionable recommendations
-        """
-        try:
-            logger.info("Getting AI-powered recommendations for scan results")
-            
-            # Get AI-powered recommendations
-            ai_recommendations = self.enhanced_agent.analyze_scan_results_with_ai(
-                scan_results, 
-                self.scan.target_url
-            )
-            
-            # Store enhanced recommendations in database
-            if 'recommendations' in ai_recommendations:
-                recs_created = 0
-                for rec in ai_recommendations['recommendations']:
-                    try:
-                        # Prepare metadata
-                        metadata = {
-                            'business_impact': rec.get('business_impact', ''),
-                            'technical_details': rec.get('technical_details', ''),
-                            'code_examples': rec.get('code_examples', {}),
-                            'verification_steps': rec.get('verification_steps', []),
-                            'implementation_complexity': self._assess_implementation_complexity(rec),
-                            'estimated_time': self._estimate_implementation_time(rec)
-                        }
-                        
-                        # Create recommendation record
-                        AIRecommendation.objects.create(
-                            analysis=analysis,
-                            title=rec.get('issue_name', 'AI Generated Recommendation'),
-                            description=rec.get('risk_assessment', rec.get('description', '')),
-                            severity=rec.get('severity', 'medium'),
-                            recommendation=json.dumps(rec.get('remediation_steps', [])),
-                            recommendation_type='ai_enhanced',
-                            confidence_score=0.9,
-                            metadata=metadata
-                        )
-                        recs_created += 1
-                    except Exception as e:
-                        logger.error(f"Error creating AI recommendation: {str(e)}")
-                
-                logger.info(f"Created {recs_created} enhanced AI recommendations")
-            
-            # Add metadata about the scan
-            ai_recommendations["metadata"] = {
-                "total_scan_results": scan_results.count(),
-                "categories_scanned": list(scan_results.values_list('category', flat=True).distinct()),
-                "severity_distribution": {
-                    severity: scan_results.filter(severity=severity).count()
-                    for severity in ['critical', 'high', 'medium', 'low', 'info']
-                }
-            }
-            
-            return ai_recommendations
-            
-        except Exception as e:
-            logger.exception(f"Error in enhanced AI analysis: {str(e)}")
-            return {"error": str(e), "recommendations": []}
-    
-    def _assess_implementation_complexity(self, recommendation: Dict[str, Any]) -> str:
-        """Assess how complex a recommendation is to implement"""
-        category = recommendation.get('category', '').lower()
-        
-        complexity_map = {
-            'headers': 'Low',     # Usually just server config
-            'ssl': 'Medium',      # May require certificate renewal
-            'content': 'High',    # May require code changes
-            'configuration': 'Low' # Usually config changes
-        }
-        
-        return complexity_map.get(category, 'Medium')
-    
-    def _estimate_implementation_time(self, recommendation: Dict[str, Any]) -> str:
-        """Estimate time needed to implement a recommendation"""
-        complexity = self._assess_implementation_complexity(recommendation)
-        severity = recommendation.get('severity', 'medium').lower()
-        
-        time_estimates = {
-            ('Low', 'critical'): '1-2 hours',
-            ('Low', 'high'): '2-4 hours',
-            ('Low', 'medium'): '1-3 hours',
-            ('Low', 'low'): '30 minutes - 1 hour',
-            ('Medium', 'critical'): '4-8 hours',
-            ('Medium', 'high'): '2-6 hours',
-            ('Medium', 'medium'): '1-4 hours',
-            ('Medium', 'low'): '1-2 hours',
-            ('High', 'critical'): '1-2 days',
-            ('High', 'high'): '4-8 hours',
-            ('High', 'medium'): '2-6 hours',
-            ('High', 'low'): '2-4 hours'
-        }
-        
-        return time_estimates.get((complexity, severity), '2-4 hours')
-    
-    # ... [Rest of your existing methods remain the same] ...
     
     def _run_threat_detection(self, scan_results, analysis):
         """Run threat detection analysis with better error handling"""

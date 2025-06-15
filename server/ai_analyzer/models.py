@@ -22,6 +22,8 @@ class AIRecommendation(models.Model):
     recommendation_type = models.CharField(max_length=100)
     description = models.TextField()
     severity = models.CharField(max_length=50)
+    recommendation = models.TextField(blank=True, null=True)  # ADD THIS: For storing remediation steps
+    metadata = models.JSONField(default=dict, blank=True)     # ADD THIS: For storing additional data
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
