@@ -362,6 +362,8 @@ class AIAnalysisService:
     def __init__(self, scan):
         self.scan = scan
         self.start_time = time.time()
+        self.security_score = None  # Store score at class level
+        self.risk_results = None    # Store full risk results
         
         # Initialize external services
         try:
@@ -393,7 +395,10 @@ class AIAnalysisService:
                 self._create_empty_analysis()
                 return
             
-            # Create analysis record
+            # CALCULATE SECURITY SCORE ONCE AT THE BEGINNING
+            self._calculate_security_score_once(scan_results)
+            
+            # Create analysis record with the calculated score
             analysis = AIAnalysis.objects.create(
                 user=self.scan.user,
                 scan_id=str(self.scan.id),
@@ -403,7 +408,8 @@ class AIAnalysisService:
                     'enhanced_ai_analysis': {},
                     'threat_detection': {},
                     'anomaly_detection': {},
-                    'risk_scoring': {}
+                    'risk_scoring': {},
+                    'security_score': self.security_score  # Store the score here
                 },
                 confidence_score=0.85
             )
@@ -432,12 +438,9 @@ class AIAnalysisService:
             logger.exception(f"Critical error in AI analysis for scan {self.scan.id}: {str(e)}")
             self._create_error_analysis(str(e))
     
-    def _run_enhanced_ai_analysis(self, scan_results, analysis):
-        """Enhanced AI analysis that provides direct actionable recommendations"""
+    def _calculate_security_score_once(self, scan_results):
+        """Calculate security score once at the beginning of analysis"""
         try:
-            logger.info("Getting AI-powered recommendations for scan results")
-            
-            # FIRST: Calculate the security score using RiskScoringModel
             from ai_analyzer.ml.risk_scoring.model import RiskScoringModel
             risk_model = RiskScoringModel()
             
@@ -453,26 +456,43 @@ class AIAnalysisService:
                     'details': result.details
                 })
             
-            # Calculate the risk score
-            risk_results = risk_model.calculate_risk_score(scan_data)
-            scanner_score = risk_results['overall_score']
+            # Calculate the risk score ONCE
+            self.risk_results = risk_model.calculate_risk_score(scan_data)
+            self.security_score = self.risk_results['overall_score']
             
-            logger.info(f"Scanner calculated security score: {scanner_score}/100")
+            logger.info(f"Security score calculated once: {self.security_score}/100")
+            logger.info(f"Risk results: {json.dumps(self.risk_results, indent=2)}")
+            
+        except Exception as e:
+            logger.error(f"Error calculating security score: {str(e)}")
+            self.security_score = 50  # Default fallback
+            self.risk_results = {
+                'overall_score': 50,
+                'error': str(e),
+                'improvement_suggestions': 'Unable to calculate detailed suggestions due to error',
+                'category_scores': {},
+                'severity_counts': {}
+            }
+    
+    def _run_enhanced_ai_analysis(self, scan_results, analysis):
+        """Enhanced AI analysis that provides direct actionable recommendations"""
+        try:
+            logger.info("Getting AI-powered recommendations for scan results")
+            
+            # Use the pre-calculated security score
+            scanner_score = self.security_score
+            
+            logger.info(f"Using pre-calculated security score: {scanner_score}/100")
             
             # Get AI-powered recommendations WITH THE SCANNER SCORE
             ai_recommendations = self.enhanced_agent.analyze_scan_results_with_ai(
                 scan_results, 
                 self.scan.target_url,
-                scanner_score  # Pass the scanner's calculated score
+                scanner_score  # Pass the pre-calculated score
             )
             
             # Ensure the AI uses the scanner score
-            if 'security_score' in ai_recommendations:
-                if ai_recommendations['security_score'] != scanner_score:
-                    logger.warning(f"AI changed security score from {scanner_score} to {ai_recommendations['security_score']}, overriding to use scanner score")
-                    ai_recommendations['security_score'] = scanner_score
-            else:
-                ai_recommendations['security_score'] = scanner_score
+            ai_recommendations['security_score'] = scanner_score
             
             # Store enhanced recommendations in database
             if 'recommendations' in ai_recommendations:
@@ -493,7 +513,8 @@ class AIAnalysisService:
                                 'technical_details': rec.get('technical_details', ''),
                                 'priority': rec.get('priority', 'medium'),
                                 'estimated_effort': rec.get('estimated_effort', 'unknown'),
-                                'category': rec.get('category', 'general')
+                                'category': rec.get('category', 'general'),
+                                'security_score': scanner_score  # Store score in metadata
                             }
                         )
                         recs_created += 1
@@ -506,7 +527,8 @@ class AIAnalysisService:
             
         except Exception as e:
             logger.exception(f"Error in enhanced AI analysis: {str(e)}")
-            return {"error": str(e), "recommendations": []}
+            return {"error": str(e), "recommendations": [], "security_score": self.security_score}
+    
     
     def _run_other_analyses(self, scan_results, analysis):
         """Run the other analysis methods"""
@@ -648,39 +670,22 @@ class AIAnalysisService:
             return {'anomaly_count': 0, 'anomalies': [], 'confidence': 0, 'error': str(e)}
     
     def _run_risk_scoring(self, scan_results, analysis):
-        """Run risk scoring analysis with better error handling"""
+        """Run risk scoring analysis using pre-calculated results"""
         try:
-            # Import the risk scoring model
-            from ai_analyzer.ml.risk_scoring.model import RiskScoringModel
-            risk_model = RiskScoringModel()
+            # Use the pre-calculated risk results and score
+            risk_results = self.risk_results if self.risk_results else {'overall_score': 50}
+            overall_score = self.security_score if self.security_score is not None else 50
             
-            all_data = {}
-            for result in scan_results:
-                try:
-                    if result.category not in all_data:
-                        all_data[result.category] = []
-                    all_data[result.category].append({
-                        'name': result.name,
-                        'severity': result.severity,
-                        'details': result.details
-                    })
-                except Exception as e:
-                    logger.warning(f"Error processing result {result.id}: {str(e)}")
+            logger.info(f"Using pre-calculated score for risk scoring: {overall_score}/100")
             
-            # Use the RiskScoringModel to calculate the score
-            risk_results = risk_model.calculate_risk_score(all_data)
-            
-            # Extract the calculated score
-            overall_score = risk_results['overall_score']
-            
-            # Create overall recommendation with the CORRECT score
+            # Create overall recommendation with the SAME score
             try:
                 AIRecommendation.objects.create(
                     analysis=analysis,
                     title=f"Overall Security Assessment",
                     description=f"Based on our security scan, {self.scan.target_url} has a security score of {overall_score}/100",
                     severity=self._get_severity_from_score(overall_score),
-                    recommendation=risk_results['improvement_suggestions'],
+                    recommendation=risk_results.get('improvement_suggestions', 'Continue monitoring your site security regularly'),
                     recommendation_type='summary',
                     confidence_score=0.95,
                     metadata={
@@ -690,15 +695,22 @@ class AIAnalysisService:
                         'overall_severity': risk_results.get('overall_severity', 'medium')
                     }
                 )
+                logger.info(f"Created Overall Security Assessment with score {overall_score}/100")
             except Exception as e:
                 logger.error(f"Error creating overall recommendation: {str(e)}")
             
-            risk_results['confidence'] = 0.95
+            # Return the pre-calculated results
             return risk_results
                 
         except Exception as e:
             logger.exception(f"Error in risk scoring: {str(e)}")
-            return {'overall_score': 0, 'error': str(e), 'confidence': 0}
+            return {
+                'overall_score': self.security_score or 0,
+                'error': str(e),
+                'confidence': 0,
+                'category_scores': self.risk_results.get('category_scores', {}) if self.risk_results else {},
+                'severity_counts': self.risk_results.get('severity_counts', {}) if self.risk_results else {}
+            }
     
     def _detect_threats(self, headers_data):
         """Detect security threats in headers data"""
