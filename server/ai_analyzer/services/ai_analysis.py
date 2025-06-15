@@ -10,6 +10,8 @@ from scanner.models import ScanResult
 from integrations.shodan_service import ShodanService
 from ai_analyzer.services.threat_intelligence import ThreatIntelligence
 from ai_analyzer.services.llm_service import LLMService
+import openai
+from django.conf import settings
 
 # Set up more detailed logging
 logger = logging.getLogger(__name__)
@@ -20,7 +22,8 @@ class EnhancedAIAgent:
     """
     
     def __init__(self):
-        self.llm_service = LLMService()
+        # Initialize OpenAI client with new v1.0+ API
+        self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
     
     def analyze_scan_results_with_ai(self, scan_results, target_url: str) -> Dict[str, Any]:
         """
@@ -33,8 +36,8 @@ class EnhancedAIAgent:
             # Create structured prompt
             prompt = self._create_comprehensive_prompt(formatted_results)
             
-            # Get AI analysis
-            ai_response = self.llm_service._get_llm_response(
+            # Get AI analysis using new OpenAI API v1.0+
+            ai_response = self._get_llm_response_v2(
                 prompt, 
                 system_prompt="You are a cybersecurity expert providing actionable vulnerability remediation advice."
             )
@@ -49,6 +52,54 @@ class EnhancedAIAgent:
                 "recommendations": [],
                 "risk_assessment": "unknown"
             }
+    
+    def _get_llm_response_v2(self, prompt: str, system_prompt: str = "") -> str:
+        """
+        Get LLM response using OpenAI API v1.0+ (replaces old LLMService)
+        """
+        try:
+            logger.info("Requesting AI analysis from OpenAI")
+            
+            # Use new OpenAI API v1.0+
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",  # or "gpt-4" if you have access
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt or "You are a helpful cybersecurity expert."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=2000,
+                temperature=0.3,
+                response_format={"type": "json_object"}  # Ensures JSON response
+            )
+            
+            # Extract response using new API format
+            ai_response = response.choices[0].message.content
+            logger.info("Successfully received AI response")
+            
+            return ai_response
+            
+        except Exception as e:
+            logger.error(f"Error getting LLM response: {str(e)}")
+            # Return a structured error response
+            return json.dumps({
+                "error": f"AI analysis failed: {str(e)}",
+                "overall_risk_level": "Medium",
+                "recommendations": [
+                    {
+                        "issue_name": "AI Analysis Unavailable",
+                        "severity": "info",
+                        "risk_assessment": "AI analysis could not be completed at this time",
+                        "remediation_steps": ["Review scan results manually", "Run scan again later"],
+                        "priority": "low"
+                    }
+                ]
+            })
     
     def _format_scan_results_for_ai(self, scan_results, target_url: str) -> Dict[str, Any]:
         """Format scan results into a structure the AI can easily understand"""
@@ -75,109 +126,181 @@ class EnhancedAIAgent:
     
     def _create_comprehensive_prompt(self, formatted_results: Dict[str, Any]) -> str:
         """Create a comprehensive prompt for actionable recommendations"""
+        # Count total findings by severity
+        total_findings = 0
+        severity_summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        
+        for category, findings in formatted_results['findings'].items():
+            total_findings += len(findings)
+            for finding in findings:
+                severity = finding.get('severity', 'info').lower()
+                if severity in severity_summary:
+                    severity_summary[severity] += 1
+        
         prompt = f"""
-            You are a cybersecurity expert analyzing web security scan results. Provide detailed, actionable remediation advice.
+You are a cybersecurity expert analyzing web security scan results. Provide detailed, actionable remediation advice in JSON format.
 
-            TARGET: {formatted_results['target_url']}
-            SCAN DATE: {formatted_results.get('scan_timestamp', 'Unknown')}
+TARGET: {formatted_results['target_url']}
+SCAN DATE: {formatted_results.get('scan_timestamp', 'Unknown')}
+TOTAL FINDINGS: {total_findings}
 
-            SCAN RESULTS:
-            {json.dumps(formatted_results['findings'], indent=2)}
+SEVERITY BREAKDOWN:
+- Critical: {severity_summary['critical']}
+- High: {severity_summary['high']}
+- Medium: {severity_summary['medium']}
+- Low: {severity_summary['low']}
+- Info: {severity_summary['info']}
 
-            For each security issue found, provide:
-            1. **Risk Assessment**: What this vulnerability means and why it's dangerous
-            2. **Business Impact**: How this could affect the organization
-            3. **Technical Details**: Specific technical explanation
-            4. **Remediation Steps**: Step-by-step fix instructions
-            5. **Code Examples**: Actual configuration or code snippets where applicable
-            6. **Priority Level**: How urgent this fix is (Critical/High/Medium/Low)
-            7. **Verification**: How to test that the fix worked
+FINDINGS BY CATEGORY:
+{self._format_findings_summary(formatted_results['findings'])}
 
-            Please structure your response as JSON in this format:
-            {{
-            "overall_risk_level": "Critical|High|Medium|Low",
-            "executive_summary": "Brief summary for non-technical stakeholders",
-            "total_issues": number,
-            "recommendations": [
-                {{
-                "issue_name": "Clear name of the issue",
-                "category": "headers|ssl|content|configuration",
-                "severity": "critical|high|medium|low",
-                "risk_assessment": "What this means and why it's dangerous",
-                "business_impact": "Impact on business operations",
-                "technical_details": "Technical explanation",
-                "remediation_steps": ["Step 1", "Step 2", "Step 3"],
-                "code_examples": {{
-                    "description": "What this code does",
-                    "code": "Actual configuration or code snippet"
-                }},
-                "priority": "critical|high|medium|low",
-                "verification_steps": ["How to verify the fix"],
-                "references": ["Relevant security standards or documentation"]
-                }}
+Please provide a JSON response with this exact structure:
+{{
+    "overall_risk_level": "Critical|High|Medium|Low",
+    "security_score": 0-100,
+    "executive_summary": "Brief summary for stakeholders",
+    "recommendations": [
+        {{
+            "issue_name": "Clear name of the security issue",
+            "category": "headers|ssl|content|vulnerabilities|configuration",
+            "severity": "critical|high|medium|low|info",
+            "risk_assessment": "What this vulnerability means and why it's dangerous",
+            "business_impact": "How this could affect business operations",
+            "technical_details": "Technical explanation for developers",
+            "remediation_steps": [
+                "Step 1: Specific action to take",
+                "Step 2: Another specific action",
+                "Step 3: Verification step"
             ],
-            "quick_wins": ["List of easiest fixes to implement first"],
-            "long_term_strategy": "Recommendations for ongoing security improvements"
-            }}
-                """
+            "code_examples": {{
+                "description": "What this configuration does",
+                "before": "Current vulnerable configuration",
+                "after": "Secure configuration example"
+            }},
+            "priority": "immediate|high|medium|low",
+            "estimated_effort": "30 minutes|2 hours|1 day|1 week",
+            "verification_steps": [
+                "How to verify the fix worked"
+            ]
+        }}
+    ],
+    "quick_wins": [
+        "Easy fixes that can be implemented immediately"
+    ],
+    "long_term_strategy": "Recommendations for ongoing security improvements"
+}}
+
+Focus on the most critical issues first and provide specific, actionable steps.
+"""
         return prompt
+    
+    def _format_findings_summary(self, findings: Dict[str, List]) -> str:
+        """Format findings for the AI prompt"""
+        summary = []
+        for category, category_findings in findings.items():
+            if category_findings:
+                summary.append(f"\n{category.upper()} ({len(category_findings)} findings):")
+                for finding in category_findings[:5]:  # Top 5 per category
+                    summary.append(f"  - {finding['severity'].upper()}: {finding['name']}")
+                if len(category_findings) > 5:
+                    summary.append(f"  - ... and {len(category_findings) - 5} more")
+        
+        return "\n".join(summary) if summary else "No specific findings to display"
     
     def _parse_ai_remediation_response(self, ai_response: str) -> Dict[str, Any]:
         """Parse AI response into structured recommendations"""
         try:
-            # Try to extract JSON from response
-            json_start = ai_response.find('{')
-            json_end = ai_response.rfind('}') + 1
+            # Try to parse as JSON first
+            parsed_response = json.loads(ai_response)
             
-            if json_start >= 0 and json_end > json_start:
-                json_str = ai_response[json_start:json_end]
-                parsed_response = json.loads(json_str)
-                
-                # Validate required fields
-                if 'recommendations' in parsed_response:
-                    return parsed_response
+            # Validate required fields and add defaults
+            if 'recommendations' not in parsed_response:
+                parsed_response['recommendations'] = []
             
-            # Fallback: extract information manually
+            if 'overall_risk_level' not in parsed_response:
+                parsed_response['overall_risk_level'] = 'Medium'
+            
+            if 'security_score' not in parsed_response:
+                parsed_response['security_score'] = 50
+            
+            # Ensure each recommendation has required fields
+            for rec in parsed_response['recommendations']:
+                rec.setdefault('severity', 'medium')
+                rec.setdefault('priority', 'medium')
+                rec.setdefault('estimated_effort', 'unknown')
+                rec.setdefault('remediation_steps', [])
+                rec.setdefault('verification_steps', [])
+                rec.setdefault('business_impact', 'Security improvement recommended')
+                rec.setdefault('technical_details', 'See remediation steps for details')
+            
+            logger.info(f"Successfully parsed AI response with {len(parsed_response['recommendations'])} recommendations")
+            return parsed_response
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse AI JSON response: {str(e)}")
+            # Fallback: create basic recommendations from text
             return self._manual_parse_response(ai_response)
-            
-        except Exception as e:
-            logger.error(f"Error parsing AI response: {str(e)}")
-            return {
-                "error": f"Failed to parse AI response: {str(e)}",
-                "raw_response": ai_response,
-                "recommendations": []
-            }
     
     def _manual_parse_response(self, response: str) -> Dict[str, Any]:
         """Manually parse AI response when JSON parsing fails"""
+        logger.info("Using manual parsing fallback for AI response")
+        
+        # Extract key information from text response
         lines = response.split('\n')
         recommendations = []
-        current_rec = {}
         
+        # Look for bullet points or numbered items that might be recommendations
+        current_rec = None
         for line in lines:
             line = line.strip()
             if not line:
                 continue
             
-            # Look for section headers
-            if line.startswith("**") and line.endswith("**"):
-                section = line.replace("**", "").lower().replace(" ", "_")
-                current_rec[section] = ""
-            elif ":" in line and current_rec:
-                key, value = line.split(":", 1)
-                current_rec[key.lower().replace(" ", "_")] = value.strip()
-            elif current_rec:
-                # Append to the last section
-                last_key = list(current_rec.keys())[-1]
-                current_rec[last_key] += " " + line
+            # Look for recommendation indicators
+            if any(indicator in line.lower() for indicator in ['recommend', 'fix', 'implement', 'address']):
+                if current_rec:
+                    recommendations.append(current_rec)
+                
+                current_rec = {
+                    "issue_name": line[:50] + "..." if len(line) > 50 else line,
+                    "severity": "medium",
+                    "risk_assessment": line,
+                    "remediation_steps": [line],
+                    "priority": "medium",
+                    "estimated_effort": "unknown"
+                }
+            elif current_rec and line:
+                # Add additional context to current recommendation
+                current_rec["risk_assessment"] += " " + line
         
+        # Add the last recommendation
         if current_rec:
             recommendations.append(current_rec)
         
+        # If no recommendations found, create a basic one
+        if not recommendations:
+            recommendations.append({
+                "issue_name": "Manual Review Required",
+                "severity": "medium",
+                "risk_assessment": "AI analysis completed but requires manual review of results",
+                "remediation_steps": [
+                    "Review scan findings manually",
+                    "Prioritize critical and high severity issues",
+                    "Implement security best practices"
+                ],
+                "priority": "medium",
+                "estimated_effort": "varies"
+            })
+        
         return {
             "overall_risk_level": "Medium",
+            "security_score": 50,
             "recommendations": recommendations,
-            "raw_response": response
+            "executive_summary": "AI analysis completed with manual parsing",
+            "quick_wins": ["Review and prioritize security findings"],
+            "long_term_strategy": "Implement comprehensive security monitoring",
+            "fallback_used": True,
+            "raw_response": response[:500] + "..." if len(response) > 500 else response
         }
 
 class AIAnalysisService:
