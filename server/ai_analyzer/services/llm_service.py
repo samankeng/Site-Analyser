@@ -187,7 +187,7 @@ class LLMService:
     
     def _create_vulnerability_analysis_prompt(self, scan_data: Dict[str, Any]) -> str:
         """
-        Create a detailed prompt for vulnerability analysis
+        Create a detailed prompt for vulnerability analysis with score alignment
         
         Args:
             scan_data: Dictionary containing scan results
@@ -196,18 +196,32 @@ class LLMService:
             Formatted prompt string
         """
         prompt = """Analyze the following website security scan results to identify vulnerabilities and security issues.
-Provide a structured response with:
-1. A list of identified vulnerabilities
-2. The severity level for each (Critical, High, Medium, Low)
-3. A brief description of each vulnerability
-4. An overall security risk assessment
 
-Scan results:
-"""
+    IMPORTANT: A technical security scanner has already calculated a baseline security score. Please provide your expert analysis 
+    while considering this baseline, but you may adjust the score based on your cybersecurity expertise and risk assessment.
+
+    Provide a structured response with:
+    1. A list of identified vulnerabilities
+    2. The severity level for each (Critical, High, Medium, Low)
+    3. A brief description of each vulnerability
+    4. An overall security risk assessment
+    5. A security score that considers both technical findings and business risk
+
+    Scan results:
+    """
         
         # Add target information
         if 'target_url' in scan_data:
             prompt += f"\nTarget URL: {scan_data['target_url']}\n"
+        
+        # Add scanner's security score as context for AI
+        if 'security_score' in scan_data:
+            prompt += f"Technical Scanner Score: {scan_data['security_score']}/100\n"
+        
+        # Add overall findings summary if available
+        if 'findings_summary' in scan_data:
+            summary = scan_data['findings_summary']
+            prompt += f"Findings Summary: {summary.get('high', 0)} high, {summary.get('medium', 0)} medium, {summary.get('low', 0)} low findings\n"
         
         # Add header information if available
         if 'headers' in scan_data:
@@ -241,20 +255,28 @@ Scan results:
         
         # Request format for response
         prompt += """
-Please provide your analysis in the following JSON format:
-{
-  "vulnerabilities": [
+    Please provide your analysis in the following JSON format:
     {
-      "name": "Vulnerability name",
-      "description": "Brief description",
-      "severity": "Critical|High|Medium|Low",
-      "impact": "Impact description"
+    "vulnerabilities": [
+        {
+        "name": "Vulnerability name",
+        "description": "Brief description",
+        "severity": "Critical|High|Medium|Low",
+        "impact": "Impact description"
+        }
+    ],
+    "risk_level": "Critical|High|Medium|Low",
+    "security_score": 47,
+    "score_reasoning": "Brief explanation of your security score assessment, mentioning if you agree with the technical scanner or why you adjusted it",
+    "risk_summary": "Brief overall risk assessment"
     }
-  ],
-  "risk_level": "Critical|High|Medium|Low",
-  "risk_summary": "Brief overall risk assessment"
-}
-"""
+
+    SCORING GUIDANCE:
+    - Consider the technical scanner's baseline score as a starting point
+    - Adjust based on business impact, exploitability, and real-world risk
+    - Explain any significant differences from the technical score in score_reasoning
+    - For test sites like badssl.com, scores should reflect their intentionally insecure nature
+    """
         
         return prompt
     
