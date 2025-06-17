@@ -68,7 +68,6 @@ INSTALLED_APPS = [
     'social_django',
     'oauth2_provider',
     'csp',
-    'security',
 ]
 
 MIDDLEWARE = [
@@ -81,7 +80,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'csp.middleware.CSPMiddleware',
-    'security.middleware.SecurityMiddleware',
+    
 
     # social signup
     'social_django.middleware.SocialAuthExceptionMiddleware',

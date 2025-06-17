@@ -55,25 +55,6 @@ SECURITY_REQUIRE_HTTPS = True
 SECURITY_SSL_REDIRECT = True
 SECURITY_HEADERS_FORCE = True
 
-# Enhanced security headers for production
-SECURITY_HEADERS = {
-    'X-XSS-Protection': '1; mode=block',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',  # Stricter in production
-    'Permissions-Policy': (
-        'accelerometer=(), '
-        'camera=(), '
-        'geolocation=(), '
-        'gyroscope=(), '
-        'magnetometer=(), '
-        'microphone=(), '
-        'payment=(), '
-        'usb=(), '
-        'interest-cohort=()'  # Block FLoC
-    ),
-    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
-}
 
 
 # Security settings
