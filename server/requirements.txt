@@ -100,3 +100,4 @@ django-csp>=4.0
 
 dj-database-url>=1.0.0
 whitenoise
+django-security

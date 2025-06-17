@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     'social_django',
     'oauth2_provider',
     'csp',
+    'security',
 ]
 
 MIDDLEWARE = [
@@ -80,13 +81,38 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'csp.middleware.CSPMiddleware',
+    'security.middleware.SecurityMiddleware',
 
     # social signup
     'social_django.middleware.SocialAuthExceptionMiddleware',
     'oauth2_provider.middleware.OAuth2TokenMiddleware',
 ]
 
+# Additional security settings for production
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = True  # Already in production.py
+SESSION_COOKIE_SECURE = True  # Already in production.py
+CSRF_COOKIE_SECURE = True  # Already in production.py
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
 ROOT_URLCONF = 'site_analyser.urls'
+
+# CSRF settings for your React frontend
+CSRF_TRUSTED_ORIGINS = [
+    'https://humble-spirit-production.up.railway.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
+
+# Security headers configuration
+SECURITY_HEADERS = {
+    'X-XSS-Protection': '1; mode=block',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer-when-downgrade',
+}
 
 TEMPLATES = [
     {
@@ -358,17 +384,78 @@ THREAT_INTEL_CACHE_TIMEOUT = int(os.environ.get('THREAT_INTEL_CACHE_TIMEOUT', 86
 THREAT_INTEL_MOCK_ENABLED = bool(os.environ.get('THREAT_INTEL_MOCK_ENABLED', True))
 
 
-CONTENT_SECURITY_POLICY = {
-    'DIRECTIVES': {
-        'default-src': ("'self'",),
-        'script-src': ("'self'",),
-        'style-src': ("'self'",),
-        'img-src': ("'self'",),
-        'object-src': ("'none'",),
-        'base-uri': ("'self'",),
-        'form-action': ("'self'",),
-    }
+# CSP Settings - Optimized for React Frontend
+CSP_DEFAULT_SRC = ("'self'",)
+
+# React needs unsafe-inline and unsafe-eval for development builds
+# In production, consider using nonces or hashes for better security
+CSP_SCRIPT_SRC = (
+    "'self'", 
+    "'unsafe-inline'", 
+    "'unsafe-eval'",
+    "https://cdnjs.cloudflare.com",  # If you use any CDN scripts
+)
+
+# CSS-in-JS libraries like styled-components need unsafe-inline
+CSP_STYLE_SRC = (
+    "'self'", 
+    "'unsafe-inline'",
+    "https://fonts.googleapis.com",  # If you use Google Fonts
+)
+
+# Images from your domain, data URLs, and HTTPS sources
+CSP_IMG_SRC = (
+    "'self'", 
+    "data:", 
+    "https:",
+    "blob:",  # For generated images
+)
+
+# Fonts from your domain, Google Fonts, and data URLs
+CSP_FONT_SRC = (
+    "'self'", 
+    "https:", 
+    "data:",
+    "https://fonts.gstatic.com",  # Google Fonts
+)
+
+# API calls, WebSockets, and HTTPS connections
+CSP_CONNECT_SRC = (
+    "'self'", 
+    "https:", 
+    "wss:", 
+    "ws:",
+    "https://humble-spirit-production.up.railway.app",  # Your backend API
+    "http://localhost:8000",  # Local development API
+)
+
+# Prevent your site from being embedded in frames
+CSP_FRAME_ANCESTORS = ("'none'",)
+
+# Only allow resources from your domain as base URI
+CSP_BASE_URI = ("'self'",)
+
+# Block object/embed/applet elements
+CSP_OBJECT_SRC = ("'none'",)
+
+# Control where forms can be submitted
+CSP_FORM_ACTION = ("'self'",)
+
+# Block legacy features
+CSP_PLUGIN_TYPES = ()
+
+# Permissions Policy (replaces Feature Policy)
+PERMISSIONS_POLICY = {
+    'accelerometer': [],
+    'camera': [],
+    'geolocation': [],
+    'gyroscope': [],
+    'magnetometer': [],
+    'microphone': [],
+    'payment': [],
+    'usb': [],
 }
+
 
 # Enhanced Logging configuration (FIXED)
 LOGGING = {
