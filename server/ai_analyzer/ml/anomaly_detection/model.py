@@ -28,6 +28,12 @@ class AnomalyDetectionModel:
         self.feature_names = []
         self.threshold = 0.8  # Default anomaly threshold score
         self.initialize_model()
+
+        # Add these new attributes
+        self.historical_data_cache = {}
+        self.smart_thresholds = {}
+        
+        self.initialize_model()
     
     def train_model(self, training_data):
         """Train the anomaly detection model"""
@@ -177,10 +183,35 @@ class AnomalyDetectionModel:
         return anomalies
 
     def detect_anomalies(self, scan_data):
+        print(f"DEBUG: scan_data = {type(scan_data)} with {len(scan_data) if hasattr(scan_data, '__len__') else 'no length'}")
         """Enhanced anomaly detection including scan failures"""
         # Try existing detection methods first
         if isinstance(scan_data, dict):
-            return self._detect_with_statistics(scan_data)
+            base_result = self._detect_with_statistics(scan_data)
+            
+            # ADD NEW ENHANCEMENTS HERE
+            # Get smart thresholds for this scan
+            self.smart_thresholds = self._get_smart_thresholds(scan_data)
+            
+            # Add behavioral anomalies to existing results
+            behavioral_anomalies = self._detect_behavioral_patterns(scan_data)
+            base_result['anomalies'].extend(behavioral_anomalies)
+            
+            # Add infrastructure anomalies
+            infra_anomalies = self._detect_infrastructure_patterns(scan_data)
+            base_result['anomalies'].extend(infra_anomalies)
+            
+            # Add security pattern anomalies
+            security_anomalies = self._detect_security_patterns(scan_data)
+            base_result['anomalies'].extend(security_anomalies)
+            
+            # Recalculate anomaly score with new findings
+            if base_result['anomalies']:
+                total_score = sum(a.get('score', 0.5) for a in base_result['anomalies'])
+                base_result['anomaly_score'] = min(1.0, total_score / len(base_result['anomalies']))
+                base_result['is_anomaly'] = base_result['anomaly_score'] > self.threshold
+            
+            return base_result
         
         # If scan_data is actually scan results (from a failed scan)
         # Detect anomalies from the scan failures themselves
@@ -360,6 +391,9 @@ class AnomalyDetectionModel:
             content = scan_data['content']
             self._check_content_anomalies(content, anomalies)
         
+        self._check_coordinated_patterns(scan_data, anomalies)
+        self._check_temporal_patterns(scan_data, anomalies)
+        
         # Calculate overall anomaly score based on detected anomalies
         if anomalies:
             total_score = sum(a.get('score', 0.5) for a in anomalies)
@@ -377,13 +411,17 @@ class AnomalyDetectionModel:
         # Check for slow response time
         if 'response_time' in performance_data:
             response_time = performance_data['response_time']
-            if response_time > 2.0:  # Arbitrary threshold
+            threshold = self.smart_thresholds.get('response_time', 2.0)
+            if response_time > threshold:  # Arbitrary threshold
+
+                severity = 'critical' if response_time > threshold * 3 else 'high' if response_time > threshold * 2 else 'medium'
+
                 anomalies.append({
                     'component': 'Response Time',
-                    'description': f'Unusually slow response time: {response_time:.2f} seconds',
-                    'severity': 'medium',
-                    'recommendation': 'Optimize server response time through caching, code optimization, or server upgrades',
-                    'score': min(1.0, response_time / 5.0)
+                    'description': f'Response time {response_time:.2f}s exceeds adaptive threshold {threshold:.2f}s',
+                    'severity': severity,
+                    'recommendation': f'Optimize server response time. Current: {response_time:.2f}s, Target: <{threshold:.1f}s',
+                    'score': min(1.0, response_time / (threshold * 2))
                 })
         
         # Check for large page size
@@ -397,7 +435,34 @@ class AnomalyDetectionModel:
                     'recommendation': 'Optimize images, minify CSS/JS, and remove unnecessary resources',
                     'score': min(1.0, page_size / 10000000)
                 })
-    
+        # ADD NEW PERFORMANCE CHECKS
+        # Time to First Byte analysis
+        if 'time_to_first_byte' in performance_data:
+            ttfb = performance_data['time_to_first_byte']
+            if ttfb > 1.0:  # TTFB over 1 second is concerning
+                anomalies.append({
+                    'component': 'Time to First Byte',
+                    'description': f'High TTFB indicates server processing delays: {ttfb:.2f}s',
+                    'severity': 'medium',
+                    'recommendation': 'Optimize server processing, database queries, or implement server-side caching',
+                    'score': min(1.0, ttfb / 3.0)
+                })
+        
+        # Resource loading failures
+        if 'failed_resources' in performance_data and 'total_resources' in performance_data:
+            failed = performance_data['failed_resources']
+            total = performance_data['total_resources']
+            if failed > 0 and total > 0:
+                failure_rate = failed / total
+                if failure_rate > 0.05:  # More than 5% failure
+                    anomalies.append({
+                        'component': 'Resource Loading',
+                        'description': f'{failed}/{total} resources failed to load ({failure_rate:.1%})',
+                        'severity': 'high' if failure_rate > 0.15 else 'medium',
+                        'recommendation': 'Fix broken resource links and improve CDN reliability',
+                        'score': min(1.0, failure_rate * 2)
+                    })
+        
     def _check_header_anomalies(self, headers, anomalies):
         """Check for anomalies in HTTP headers"""
         # Check for unusual server headers that might reveal information
@@ -421,6 +486,41 @@ class AnomalyDetectionModel:
                 'recommendation': 'Review headers and remove unnecessary ones',
                 'score': 0.3
             })
+        security_headers = {
+        'strict-transport-security': {'severity': 'high', 'description': 'HSTS header prevents protocol downgrade attacks'},
+        'content-security-policy': {'severity': 'high', 'description': 'CSP header prevents XSS and injection attacks'},
+        'x-content-type-options': {'severity': 'medium', 'description': 'Prevents MIME type sniffing attacks'},
+        'x-frame-options': {'severity': 'medium', 'description': 'Prevents clickjacking attacks'},
+        'referrer-policy': {'severity': 'low', 'description': 'Controls referrer information leakage'}
+    }
+    
+        missing_security = []
+        for header, info in security_headers.items():
+            if header not in headers:
+                missing_security.append((header, info))
+        
+        if missing_security:
+            for header, info in missing_security[:3]:  # Top 3 missing
+                anomalies.append({
+                    'component': 'Missing Security Header',
+                    'description': f'Missing {header} header: {info["description"]}',
+                    'severity': info['severity'],
+                    'recommendation': f'Implement {header} header for enhanced security',
+                    'score': 0.8 if info['severity'] == 'high' else 0.6 if info['severity'] == 'medium' else 0.4
+                })
+        
+        # Check for unusual header values
+        if 'server' in headers:
+            server_value = headers['server'].lower()
+            development_servers = ['werkzeug', 'django', 'express development']
+            if any(dev_server in server_value for dev_server in development_servers):
+                anomalies.append({
+                    'component': 'Development Server',
+                    'description': f'Development server detected in production: {headers["server"]}',
+                    'severity': 'high',
+                    'recommendation': 'Replace with production-grade web server (nginx, apache, etc.)',
+                    'score': 0.9
+                })
     
     def _check_ssl_anomalies(self, ssl_data, anomalies):
         """Check for anomalies in SSL configuration"""
@@ -450,6 +550,134 @@ class AnomalyDetectionModel:
                     'recommendation': 'Configure server to prioritize ECDHE or DHE cipher suites',
                     'score': 0.6
                 })
+    def _get_smart_thresholds(self, scan_data):
+        """Calculate smart thresholds based on scan context"""
+        thresholds = {
+            'response_time': 2.0,
+            'page_size': 3000000,
+            'header_count': 20
+        }
+        
+        # Adjust based on detected website type
+        content = scan_data.get('content', {})
+        url = scan_data.get('url', '')
+        
+        # E-commerce sites should be faster
+        if any(keyword in content.get('text', '').lower() for keyword in ['cart', 'checkout', 'payment', 'buy']):
+            thresholds['response_time'] = 1.5
+        
+        # API endpoints should be much faster
+        if '/api/' in url or 'api.' in url:
+            thresholds['response_time'] = 0.8
+            thresholds['header_count'] = 15
+        
+        # Static sites can be more lenient
+        if any(keyword in content.get('text', '').lower() for keyword in ['blog', 'portfolio', 'landing']):
+            thresholds['response_time'] = 3.0
+            thresholds['page_size'] = 5000000
+        
+        return thresholds
+
+    def _detect_behavioral_patterns(self, scan_data):
+        """Detect behavioral anomalies"""
+        anomalies = []
+        
+        # Compare with historical data if available
+        historical = self._get_historical_baseline()
+        if historical:
+            current_response = scan_data.get('performance', {}).get('response_time', 0)
+            avg_response = historical.get('avg_response_time', 0)
+            
+            if current_response > avg_response * 2:  # 100% slower than average
+                anomalies.append({
+                    'component': 'Performance Degradation',
+                    'description': f'Response time ({current_response:.2f}s) is {((current_response/avg_response - 1) * 100):.0f}% slower than historical average',
+                    'severity': 'high',
+                    'recommendation': 'Investigate recent changes that may have impacted performance',
+                    'score': min(1.0, current_response / (avg_response * 3))
+                })
+        
+        return anomalies
+
+    def _detect_infrastructure_patterns(self, scan_data):
+        """Detect infrastructure anomalies"""
+        anomalies = []
+        headers = scan_data.get('headers', {})
+        
+        # Check for load balancer inconsistencies
+        has_forwarded = 'x-forwarded-for' in headers
+        has_real_ip = 'x-real-ip' in headers
+        
+        if has_forwarded and not has_real_ip:
+            anomalies.append({
+                'component': 'Load Balancer Configuration',
+                'description': 'Inconsistent proxy headers detected',
+                'severity': 'medium',
+                'recommendation': 'Review load balancer configuration for proper header handling',
+                'score': 0.6
+            })
+        
+        return anomalies
+
+    def _detect_security_patterns(self, scan_data):
+        """Detect security pattern anomalies"""
+        anomalies = []
+        headers = scan_data.get('headers', {})
+        
+        # Check for multiple authentication methods
+        auth_headers = [h for h in headers.keys() if 'auth' in h.lower()]
+        if len(auth_headers) > 2:
+            anomalies.append({
+                'component': 'Authentication Complexity',
+                'description': f'Multiple authentication mechanisms detected: {", ".join(auth_headers)}',
+                'severity': 'medium',
+                'recommendation': 'Simplify authentication architecture',
+                'score': 0.7
+            })
+        
+        return anomalies
+
+    def _check_coordinated_patterns(self, scan_data, anomalies):
+        """Check for coordinated attack patterns"""
+        # Check for bot-like behavior indicators
+        headers = scan_data.get('headers', {})
+        user_agent = headers.get('user-agent', '').lower()
+        
+        bot_indicators = ['bot', 'crawler', 'spider', 'scraper']
+        if any(indicator in user_agent for indicator in bot_indicators):
+            anomalies.append({
+                'component': 'Bot Detection',
+                'description': f'Bot user agent detected: {headers.get("user-agent", "")}',
+                'severity': 'low',
+                'recommendation': 'Monitor for automated scanning attempts',
+                'score': 0.4
+            })
+
+    def _check_temporal_patterns(self, scan_data, anomalies):
+        """Check for time-based anomalies"""
+        from datetime import datetime
+        
+        # Check if this is an unusual time for activity
+        current_hour = datetime.now().hour
+        if current_hour < 6 or current_hour > 22:  # Very early or very late
+            anomalies.append({
+                'component': 'Unusual Timing',
+                'description': f'Activity detected during off-hours: {current_hour:02d}:00',
+                'severity': 'low',
+                'recommendation': 'Monitor for potential automated attacks during off-hours',
+                'score': 0.3
+            })
+
+    def _get_historical_baseline(self):
+        """Get historical baseline data for comparison"""
+        # This would query your database for historical data
+        # For now, return None to avoid breaking existing functionality
+        try:
+            # You could implement this to query your ScanResult model
+            # for historical averages
+            return None
+        except:
+            return None
     
     def _check_content_anomalies(self, content_data, anomalies):
         """Check for content-related anomalies"""
