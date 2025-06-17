@@ -50,12 +50,6 @@ STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 
-# Override security settings for production
-SECURITY_REQUIRE_HTTPS = True
-SECURITY_SSL_REDIRECT = True
-SECURITY_HEADERS_FORCE = True
-
-
 
 # Security settings
 SECURE_SSL_REDIRECT = True

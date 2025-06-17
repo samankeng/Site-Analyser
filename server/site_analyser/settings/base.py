@@ -105,13 +105,6 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:3000',
 ]
 
-# Security headers configuration
-SECURITY_HEADERS = {
-    'X-XSS-Protection': '1; mode=block',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer-when-downgrade',
-}
 
 TEMPLATES = [
     {
