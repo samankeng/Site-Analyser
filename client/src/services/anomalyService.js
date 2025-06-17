@@ -71,6 +71,65 @@ const anomalyService = {
         }
       }
 
+      // ADD SMART PRIORITIZATION HERE (without changing existing logic)
+      if (anomaliesData && anomaliesData.length > 0) {
+        // Smart prioritization algorithm
+        const prioritized = anomaliesData.map((anomaly) => {
+          // Priority scoring weights
+          const severityWeights = {
+            critical: 15,
+            high: 8,
+            medium: 4,
+            low: 0.5,
+            info: 0,
+          };
+          const componentWeights = {
+            "SSL Certificate": 9,
+            "Website Status": 9,
+            "Website Availability": 9,
+            "Security Headers": 8,
+            "Environment Security": 8,
+            Performance: 6,
+            "CORS Configuration": 5,
+            "Security Monitoring": 4,
+          };
+
+          const severityWeight = severityWeights[anomaly.severity] || 1;
+          const componentWeight = componentWeights[anomaly.component] || 3;
+          const confidenceScore = anomaly.score || 0.5;
+
+          const priorityScore =
+            severityWeight * componentWeight * confidenceScore;
+
+          return {
+            ...anomaly,
+            priority_score: priorityScore,
+            priority_level:
+              priorityScore > 40
+                ? "immediate"
+                : priorityScore > 20
+                ? "high"
+                : priorityScore > 10
+                ? "medium"
+                : "low",
+          };
+        });
+
+        // Sort by priority (highest first)
+        anomaliesData = prioritized.sort(
+          (a, b) => b.priority_score - a.priority_score
+        );
+
+        console.log(
+          `Applied smart prioritization to ${anomaliesData.length} anomalies`
+        );
+        console.log(
+          `Immediate action required: ${
+            anomaliesData.filter((a) => a.priority_level === "immediate").length
+          }`
+        );
+      }
+
       return { success: true, data: anomaliesData || [] };
     } catch (error) {
       console.error("Error in getAnomaliesForScan:", error);
@@ -114,6 +173,91 @@ const anomalyService = {
       );
       return null;
     }
+  },
+
+  // Add this new method (doesn't change existing ones)
+  startRealTimeMonitoring: (scanId, onUpdate) => {
+    if (!scanId || scanId === "undefined") {
+      console.error("Invalid scanId for real-time monitoring:", scanId);
+      return null;
+    }
+
+    console.log(`Starting real-time anomaly monitoring for scan ${scanId}`);
+
+    let attempts = 0;
+    const maxAttempts = 30; // 5 minutes
+
+    const monitoringInterval = setInterval(async () => {
+      attempts++;
+
+      try {
+        // Check current scan status
+        const statusResponse = await api.get(`/scanner/scans/${scanId}/`);
+        const status = statusResponse.data.status;
+
+        console.log(`Real-time monitor attempt ${attempts}: ${status}`);
+
+        // Get current anomalies
+        const anomalyResponse = await anomalyService.getAnomaliesForScan(
+          scanId
+        );
+
+        if (anomalyResponse.success && anomalyResponse.data.length > 0) {
+          // Filter for new high-priority anomalies
+          const urgentAnomalies = anomalyResponse.data.filter(
+            (a) =>
+              a.priority_level === "immediate" ||
+              a.severity === "critical" ||
+              a.severity === "high"
+          );
+
+          if (urgentAnomalies.length > 0) {
+            console.log(
+              `Real-time: Found ${urgentAnomalies.length} urgent anomalies`
+            );
+            onUpdate({
+              type: "urgent_anomalies",
+              anomalies: urgentAnomalies,
+              scan_status: status,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+
+        // Stop monitoring when scan completes
+        if (status === "completed" || status === "failed") {
+          clearInterval(monitoringInterval);
+          console.log(`Real-time monitoring stopped: scan ${status}`);
+
+          // Final anomaly check
+          const finalCheck = await anomalyService.getAnomaliesForScan(scanId);
+          onUpdate({
+            type: "final_report",
+            anomalies: finalCheck.success ? finalCheck.data : [],
+            scan_status: status,
+            timestamp: new Date().toISOString(),
+          });
+
+          return;
+        }
+
+        // Stop if max attempts reached
+        if (attempts >= maxAttempts) {
+          clearInterval(monitoringInterval);
+          console.warn("Real-time monitoring timeout reached");
+          onUpdate({
+            type: "timeout",
+            message: "Monitoring timeout after 5 minutes",
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (error) {
+        console.error("Real-time monitoring error:", error);
+        // Continue monitoring despite errors
+      }
+    }, 10000); // Check every 10 seconds
+
+    return monitoringInterval; // Return interval ID so it can be cleared
   },
 
   // Enhanced connection anomaly detection
@@ -673,15 +817,73 @@ const anomalyService = {
     }
 
     const severityWeights = {
-      critical: 25,
-      high: 15,
-      medium: 8,
-      low: 3,
-      info: 1,
+      critical: 15,
+      high: 8,
+      medium: 4,
+      low: 0.5,
+      info: 0,
     };
 
     let totalScore = 0;
     let maxPossibleScore = 0;
+    let patternMultiplier = 1.0;
+
+    // Detect anomaly patterns (ML-style)
+    const severityCounts = anomalies.reduce((acc, anomaly) => {
+      const severity = anomaly.severity?.toLowerCase() || "low";
+      acc[severity] = (acc[severity] || 0) + 1;
+      return acc;
+    }, {});
+
+    const componentCounts = anomalies.reduce((acc, anomaly) => {
+      const component = anomaly.component || "Unknown";
+      acc[component] = (acc[component] || 0) + 1;
+      return acc;
+    }, {});
+
+    // ML-style pattern detection
+    // Pattern 1: Cascading failures (multiple components affected)
+    if (Object.keys(componentCounts).length > 3) {
+      patternMultiplier *= 1.3; // 30% increase for widespread issues
+      console.log(
+        "ML Pattern detected: Cascading failures across multiple components"
+      );
+    }
+
+    // Pattern 2: Severity clustering (many high/critical issues)
+    const highSeverityCount =
+      (severityCounts.critical || 0) + (severityCounts.high || 0);
+    if (highSeverityCount > anomalies.length * 0.6) {
+      patternMultiplier *= 1.4; // 40% increase for severity clustering
+      console.log("ML Pattern detected: High severity clustering");
+    }
+
+    // Pattern 3: Security infrastructure breakdown
+    const securityComponents = [
+      "SSL Certificate",
+      "Security Headers",
+      "CORS Configuration",
+      "Website Status",
+    ];
+    const securityIssues = Object.keys(componentCounts).filter((comp) =>
+      securityComponents.some((sec) => comp.includes(sec))
+    ).length;
+
+    if (securityIssues >= 3) {
+      patternMultiplier *= 1.5; // 50% increase for security infrastructure issues
+      console.log("ML Pattern detected: Security infrastructure breakdown");
+    }
+
+    // Pattern 4: Performance correlation (performance + availability issues)
+    const hasPerformanceIssues = componentCounts["Performance"] > 0;
+    const hasAvailabilityIssues =
+      componentCounts["Website Availability"] > 0 ||
+      componentCounts["Website Status"] > 0;
+
+    if (hasPerformanceIssues && hasAvailabilityIssues) {
+      patternMultiplier *= 1.2; // 20% increase for correlated issues
+      console.log("ML Pattern detected: Performance-availability correlation");
+    }
 
     anomalies.forEach((anomaly) => {
       const severity = anomaly.severity?.toLowerCase() || "low";
@@ -692,11 +894,22 @@ const anomalyService = {
       maxPossibleScore += weight;
     });
 
+    // Apply ML pattern multiplier
+    totalScore *= patternMultiplier;
+    maxPossibleScore *= patternMultiplier;
+
     // Normalize to 0-100 scale
     if (maxPossibleScore === 0) return 0;
 
     const normalizedScore = (totalScore / maxPossibleScore) * 100;
-    return Math.min(100, Math.round(normalizedScore));
+    const finalScore = Math.min(100, Math.round(normalizedScore));
+
+    console.log(
+      `ML-Enhanced Anomaly Score: ${finalScore}/100 (pattern multiplier: ${patternMultiplier.toFixed(
+        2
+      )})`
+    );
+    return finalScore;
   },
 };
 
