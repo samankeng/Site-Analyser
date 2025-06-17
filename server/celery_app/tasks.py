@@ -629,3 +629,235 @@ def clear_all_rate_limits_task():
     except Exception as e:
         logger.exception(f"Error clearing all rate limits: {str(e)}")
         return {"status": "error", "message": str(e)}
+    
+# 1. ADD REAL-TIME ANOMALY MONITORING TASK
+@shared_task(bind=True)
+def monitor_scan_for_anomalies_task(self, scan_id, check_interval=10):
+    """Real-time anomaly monitoring during scan execution"""
+    try:
+        from scanner.models import Scan, ScanResult
+        from ai_analyzer.ml.anomaly_detection.model import AnomalyDetectionModel
+        import time
+        
+        scan = Scan.objects.get(id=scan_id)
+        anomaly_detector = AnomalyDetectionModel()
+        
+        max_checks = 30  # 5 minutes of monitoring
+        checks_performed = 0
+        
+        while checks_performed < max_checks:
+            # Refresh scan status
+            scan.refresh_from_db()
+            
+            # Stop monitoring if scan completed or failed
+            if scan.status in ['completed', 'failed']:
+                break
+            
+            # Check for anomalies in current results
+            current_results = ScanResult.objects.filter(scan=scan)
+            if current_results.count() > 10:  # Only check if we have enough data
+                
+                # Run real-time anomaly detection
+                anomaly_results = anomaly_detector.detect_anomalies(list(current_results))
+                
+                if anomaly_results.get('anomalies'):
+                    logger.warning(f"Urgent anomalies detected in scan {scan_id}: {len(anomaly_results['anomalies'])}")
+                    
+                    # Could trigger notifications here
+                    # send_anomaly_alert.delay(scan_id, anomaly_results['urgent_anomalies'])
+            
+            time.sleep(check_interval)
+            checks_performed += 1
+        
+        logger.info(f"Anomaly monitoring completed for scan {scan_id}")
+        return {"status": "success", "checks_performed": checks_performed}
+        
+    except Exception as e:
+        logger.exception(f"Error in anomaly monitoring for scan {scan_id}: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+# 2. ENHANCE THE AI ANALYSIS TASK TO INCLUDE BETTER ANOMALY DETECTION
+@shared_task(bind=True, max_retries=3)
+def run_enhanced_ai_analysis_task(self, scan_id):
+    """Enhanced AI analysis task with better anomaly detection"""
+    try:
+        from scanner.models import Scan
+        from ai_analyzer.services.ai_analysis import AIAnalysisService
+        
+        logger.info(f"Starting enhanced AI analysis for scan {scan_id}")
+        
+        scan = Scan.objects.get(id=scan_id)
+        
+        # Check if scan is completed
+        if scan.status != 'completed':
+            logger.warning(f"Cannot analyze scan {scan_id} that is not completed. Current status: {scan.status}")
+            raise ValueError(f"Cannot analyze scan that is not completed. Current status: {scan.status}")
+        
+        # Check if AI analysis already exists
+        from ai_analyzer.models import AIAnalysis
+        existing_analysis = AIAnalysis.objects.filter(scan_id=str(scan.id)).first()
+        
+        if existing_analysis:
+            logger.info(f"AI analysis already exists for scan {scan_id}, updating with enhanced anomaly detection")
+            # Could update existing analysis with new anomaly detection
+        
+        # Run the enhanced AI analysis (includes your new anomaly detection)
+        analysis_service = AIAnalysisService(scan)
+        analysis_service.analyze()
+        
+        # ADDITIONAL: Run standalone anomaly detection for comparison
+        try:
+            from ai_analyzer.ml.anomaly_detection.model import AnomalyDetectionModel
+            anomaly_detector = AnomalyDetectionModel()
+            
+            # Get scan results for anomaly detection
+            from scanner.models import ScanResult
+            scan_results = ScanResult.objects.filter(scan=scan)
+            
+            # Run enhanced anomaly detection
+            standalone_anomalies = anomaly_detector.detect_anomalies(list(scan_results))
+            
+            if standalone_anomalies.get('anomalies'):
+                logger.info(f"Standalone anomaly detection found {len(standalone_anomalies['anomalies'])} additional anomalies")
+                
+                # Store standalone anomaly results in the analysis
+                if existing_analysis:
+                    analysis_result = existing_analysis.analysis_result or {}
+                    analysis_result['standalone_anomaly_detection'] = {
+                        'anomaly_count': len(standalone_anomalies.get('anomalies', [])),
+                        'anomalies': standalone_anomalies.get('anomalies', []),
+                        'detection_method': 'standalone_enhanced',
+                        'is_anomaly': standalone_anomalies.get('is_anomaly', False),
+                        'anomaly_score': standalone_anomalies.get('anomaly_score', 0.0)
+                    }
+                    existing_analysis.analysis_result = analysis_result
+                    existing_analysis.save()
+                    
+        except Exception as anomaly_error:
+            logger.warning(f"Standalone anomaly detection failed: {str(anomaly_error)}")
+        
+        logger.info(f"Enhanced AI analysis completed successfully for scan {scan_id}")
+        return {"status": "success", "scan_id": scan_id, "enhanced": True}
+    
+    except Exception as e:
+        logger.exception(f"Error running enhanced AI analysis for scan {scan_id}: {str(e)}")
+        
+        # Retry with exponential backoff
+        if self.request.retries < self.max_retries:
+            retry_countdown = 60 * (2 ** self.request.retries)
+            logger.info(f"Retrying enhanced AI analysis for scan {scan_id} in {retry_countdown} seconds")
+            raise self.retry(countdown=retry_countdown, exc=e)
+        
+        return {"status": "error", "message": str(e)}
+
+# 3. UPDATE THE COMPLETION FUNCTION TO TRIGGER ENHANCED ANALYSIS
+def complete_scan_with_enhanced_ai_analysis(scan):
+    """Enhanced completion function that triggers better AI analysis"""
+    try:
+        # Update scan status
+        scan.status = 'completed'
+        scan.completed_at = timezone.now()
+        scan.save()
+        
+        # Trigger enhanced AI analysis if enabled
+        if getattr(settings, 'AI_ANALYZER_ENABLED', True):
+            logger.info(f"Triggering enhanced AI analysis for completed scan {scan.id}")
+            
+            # Use the enhanced AI analysis task instead of the basic one
+            run_enhanced_ai_analysis_task.delay(str(scan.id))
+            
+            # OPTIONAL: Also start real-time anomaly monitoring for future reference
+            # monitor_scan_for_anomalies_task.delay(str(scan.id))
+        
+        logger.info(f"Scan {scan.id} completed successfully with enhanced AI analysis queued")
+        
+    except Exception as e:
+        logger.exception(f"Error completing scan {scan.id}: {str(e)}")
+        scan.status = 'failed'
+        scan.error_message = str(e)
+        scan.completed_at = timezone.now()
+        scan.save()
+
+# 4. ADD ANOMALY CLEANUP TASK
+@shared_task
+def cleanup_false_positive_anomalies():
+    """Clean up anomalies marked as false positives"""
+    try:
+        from ai_analyzer.models import AIAnalysis, AIRecommendation
+        from datetime import timedelta
+        
+        # Find anomaly recommendations marked as false positives older than 30 days
+        cutoff_date = timezone.now() - timedelta(days=30)
+        
+        false_positive_recs = AIRecommendation.objects.filter(
+            recommendation_type='anomaly_detection',
+            metadata__is_false_positive=True,
+            created_at__lt=cutoff_date
+        )
+        
+        count = false_positive_recs.count()
+        false_positive_recs.delete()
+        
+        logger.info(f"Cleaned up {count} false positive anomaly recommendations")
+        
+        return {"status": "success", "cleaned_up": count}
+        
+    except Exception as e:
+        logger.exception(f"Error cleaning up false positive anomalies: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+# 5. ADD TASK TO TRIGGER ANOMALY DETECTION ON EXISTING SCANS
+@shared_task
+def rerun_anomaly_detection_on_scan(scan_id):
+    """Re-run anomaly detection on an existing completed scan"""
+    try:
+        from scanner.models import Scan, ScanResult
+        from ai_analyzer.services.ai_analysis import AIAnalysisService
+        
+        scan = Scan.objects.get(id=scan_id)
+        
+        if scan.status != 'completed':
+            raise ValueError(f"Cannot re-run anomaly detection on incomplete scan: {scan.status}")
+        
+        logger.info(f"Re-running anomaly detection on scan {scan_id}")
+        
+        # Get existing scan results
+        scan_results = ScanResult.objects.filter(scan=scan)
+        
+        if not scan_results.exists():
+            raise ValueError("No scan results found to analyze")
+        
+        # Re-run just the anomaly detection part
+        analysis_service = AIAnalysisService(scan)
+        
+        # Get or create analysis record
+        from ai_analyzer.models import AIAnalysis
+        analysis, created = AIAnalysis.objects.get_or_create(
+            scan_id=str(scan.id),
+            defaults={
+                'user': scan.user,
+                'scan_identifier': scan.target_url,
+                'analysis_type': 'rerun_anomaly',
+                'analysis_result': {},
+                'confidence_score': 0.5
+            }
+        )
+        
+        # Run enhanced anomaly detection
+        anomaly_results = analysis_service._run_anomaly_detection(scan_results, analysis)
+        
+        # Update analysis result
+        analysis.analysis_result['rerun_anomaly_detection'] = anomaly_results
+        analysis.save()
+        
+        logger.info(f"Re-run anomaly detection completed for scan {scan_id}")
+        
+        return {
+            "status": "success", 
+            "scan_id": scan_id,
+            "anomalies_found": anomaly_results.get('anomaly_count', 0)
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error re-running anomaly detection for scan {scan_id}: {str(e)}")
+        return {"status": "error", "message": str(e), "scan_id": scan_id}
