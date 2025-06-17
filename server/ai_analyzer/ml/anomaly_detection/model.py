@@ -115,119 +115,244 @@ class AnomalyDetectionModel:
             logger.error(f"Error saving model: {str(e)}")
             return False
         
-    def detect_scan_failure_anomalies(self, scan_results):
-        """Detect anomalies from scan failures and errors"""
-        anomalies = []
-        
-        # Convert QuerySet to list if needed
-        if hasattr(scan_results, 'all'):
-            results_list = list(scan_results.all())
-        else:
-            results_list = scan_results
-        
-        # Check for SSL certificate expiration
-        ssl_errors = [r for r in results_list if 
-                    'certificate has expired' in r.description or
-                    'CERTIFICATE_VERIFY_FAILED' in r.description]
-        
-        if ssl_errors:
-            anomalies.append({
-                'component': 'SSL Certificate',
-                'description': 'SSL certificate has expired, preventing secure connections',
-                'severity': 'high',
-                'recommendation': 'Renew SSL certificate immediately to restore HTTPS functionality',
-                'score': 1.0
-            })
-        
-        # Check for connection failures
-        connection_errors = [r for r in results_list if 
-                            'Failed to connect' in r.description or
-                            'Max retries exceeded' in r.description]
-        
-        if len(connection_errors) > 3:
-            anomalies.append({
-                'component': 'Website Availability',
-                'description': f'Multiple connection failures detected ({len(connection_errors)} failed attempts)',
-                'severity': 'high',
-                'recommendation': 'Check server status, DNS configuration, and network connectivity',
-                'score': 0.9
-            })
-        
-        # Check for scan timeouts
-        timeout_errors = [r for r in results_list if 
-                        'SoftTimeLimitExceeded' in r.description or
-                        'timeout' in r.description.lower()]
-        
-        if timeout_errors:
-            anomalies.append({
-                'component': 'Performance',
-                'description': 'Scan operations timed out indicating slow server responses',
-                'severity': 'medium',
-                'recommendation': 'Optimize server performance and check for resource bottlenecks',
-                'score': 0.7
-            })
-        
-        # Check for CORS configuration issues
-        cors_errors = [r for r in results_list if 
-                    r.category == 'cors' and 'Failed to analyze CORS' in r.description]
-        
-        if len(cors_errors) > 10:  # Many CORS endpoints failed
-            anomalies.append({
-                'component': 'CORS Configuration',
-                'description': f'Unable to analyze CORS on {len(cors_errors)} endpoints due to connection issues',
-                'severity': 'medium',
-                'recommendation': 'Fix underlying connection issues to properly assess CORS security',
-                'score': 0.6
-            })
-        
-        return anomalies
+    def detect_scan_failure_anomalies(self, scan_data):
+        """Detect scan failure patterns - FIXED for dictionary input"""
+        try:
+            failure_anomalies = []
+            
+            # Helper function to safely get value from dict or object
+            def safe_get(item, key, default=''):
+                if isinstance(item, dict):
+                    return item.get(key, default)
+                else:
+                    return getattr(item, key, default)
+            
+            # SSL certificate issues - FIXED
+            ssl_expired = [r for r in scan_data if 
+                        'certificate has expired' in safe_get(r, 'description', '') or
+                        'SSL: CERTIFICATE_VERIFY_FAILED' in safe_get(r, 'description', '')]
+            
+            if ssl_expired:
+                failure_anomalies.append({
+                    'type': 'ssl_expired',
+                    'description': f'SSL certificate expired, causing {len(ssl_expired)} scan failures',
+                    'severity': 'high',
+                    'affected_scans': len(ssl_expired),
+                    'recommendation': 'Renew SSL certificate immediately'
+                })
+            
+            # Connection timeouts - FIXED  
+            timeouts = [r for r in scan_data if 
+                    'timeout' in safe_get(r, 'description', '').lower() or
+                    'SoftTimeLimitExceeded' in safe_get(r, 'description', '')]
+            
+            if len(timeouts) > 3:
+                failure_anomalies.append({
+                    'type': 'excessive_timeouts',
+                    'description': f'Multiple scan timeouts detected ({len(timeouts)} timeouts)',
+                    'severity': 'medium',
+                    'affected_scans': len(timeouts),
+                    'recommendation': 'Investigate performance issues'
+                })
+            
+            # Connection failures - FIXED
+            connection_failures = [r for r in scan_data if 
+                                'Failed to connect' in safe_get(r, 'description', '') or
+                                'Connection refused' in safe_get(r, 'description', '')]
+            
+            if len(connection_failures) > 2:
+                failure_anomalies.append({
+                    'type': 'connection_failures',
+                    'description': f'Multiple connection failures ({len(connection_failures)} failures)',
+                    'severity': 'high',
+                    'affected_scans': len(connection_failures),
+                    'recommendation': 'Check server availability and network connectivity'
+                })
+            
+            return failure_anomalies
+            
+        except Exception as e:
+            logger.exception(f"Error detecting scan failure anomalies: {str(e)}")
+            return []
+
+    def detect_security_anomalies(self, scan_data):
+        """Detect security-related anomalies - FIXED for dictionary input"""
+        try:
+            security_anomalies = []
+            
+            # Helper function to safely get value from dict or object
+            def safe_get(item, key, default=''):
+                if isinstance(item, dict):
+                    return item.get(key, default)
+                else:
+                    return getattr(item, key, default)
+            
+            # Group by category - FIXED
+            categorized_results = {}
+            for result in scan_data:
+                category = safe_get(result, 'category', 'unknown')
+                if category not in categorized_results:
+                    categorized_results[category] = []
+                categorized_results[category].append(result)
+            
+            # Check for security header clustering - FIXED
+            if 'headers' in categorized_results:
+                header_results = categorized_results['headers']
+                critical_headers = [h for h in header_results if safe_get(h, 'severity', '') in ['high', 'critical']]
+                
+                if len(critical_headers) > 5:
+                    security_anomalies.append({
+                        'type': 'missing_security_headers',
+                        'description': f'Multiple critical security headers missing ({len(critical_headers)} issues)',
+                        'severity': 'high',
+                        'affected_items': len(critical_headers),
+                        'recommendation': 'Implement comprehensive security header policy'
+                    })
+            
+            # Check for SSL/TLS issues clustering - FIXED
+            if 'ssl' in categorized_results:
+                ssl_results = categorized_results['ssl']
+                ssl_issues = [s for s in ssl_results if safe_get(s, 'severity', '') in ['medium', 'high', 'critical']]
+                
+                if len(ssl_issues) > 3:
+                    security_anomalies.append({
+                        'type': 'ssl_configuration_issues',
+                        'description': f'Multiple SSL/TLS configuration problems ({len(ssl_issues)} issues)',
+                        'severity': 'high',
+                        'affected_items': len(ssl_issues),
+                        'recommendation': 'Review and update SSL/TLS configuration'
+                    })
+            
+            # Check for vulnerability clustering - FIXED
+            if 'vulnerabilities' in categorized_results:
+                vuln_results = categorized_results['vulnerabilities']
+                high_vulns = [v for v in vuln_results if safe_get(v, 'severity', '') in ['high', 'critical']]
+                
+                if len(high_vulns) > 2:
+                    security_anomalies.append({
+                        'type': 'vulnerability_cluster',
+                        'description': f'Multiple high-severity vulnerabilities found ({len(high_vulns)} vulns)',
+                        'severity': 'critical',
+                        'affected_items': len(high_vulns),
+                        'recommendation': 'Immediate security review and patching required'
+                    })
+            
+            # Overall issue density anomaly - FIXED
+            total_issues = len(scan_data)
+            high_severity_issues = [r for r in scan_data if safe_get(r, 'severity', '') in ['high', 'critical']]
+            
+            if total_issues > 0 and len(high_severity_issues) / total_issues > 0.3:  # More than 30% high severity
+                security_anomalies.append({
+                    'type': 'high_severity_concentration',
+                    'description': f'High concentration of severe issues ({len(high_severity_issues)}/{total_issues} = {round((len(high_severity_issues)/total_issues)*100)}%)',
+                    'severity': 'critical',
+                    'affected_items': len(high_severity_issues),
+                    'recommendation': 'Comprehensive security audit required'
+                })
+            
+            return security_anomalies
+            
+        except Exception as e:
+            logger.exception(f"Error detecting security anomalies: {str(e)}")
+            return []
+
+    def detect_performance_anomalies(self, scan_data):
+        """Detect performance-related anomalies - FIXED for dictionary input"""
+        try:
+            performance_anomalies = []
+            
+            # Helper function to safely get value from dict or object
+            def safe_get(item, key, default=''):
+                if isinstance(item, dict):
+                    return item.get(key, default)
+                else:
+                    return getattr(item, key, default)
+            
+            # Check for slow response patterns - FIXED
+            slow_responses = []
+            for result in scan_data:
+                description = safe_get(result, 'description', '').lower()
+                details = safe_get(result, 'details', {})
+                
+                # Look for performance indicators
+                if any(keyword in description for keyword in ['slow', 'timeout', 'delay', 'performance']):
+                    slow_responses.append(result)
+                
+                # Check response time in details if available
+                if isinstance(details, dict) and details.get('response_time', 0) > 5000:  # > 5 seconds
+                    slow_responses.append(result)
+            
+            if len(slow_responses) > 3:
+                performance_anomalies.append({
+                    'type': 'performance_degradation',
+                    'description': f'Multiple slow response indicators detected ({len(slow_responses)} issues)',
+                    'severity': 'medium',
+                    'affected_items': len(slow_responses),
+                    'recommendation': 'Investigate server performance and optimize response times'
+                })
+            
+            # Check for resource-related issues - FIXED
+            resource_issues = [r for r in scan_data if 
+                            any(keyword in safe_get(r, 'description', '').lower() 
+                                for keyword in ['memory', 'cpu', 'disk', 'resource'])]
+            
+            if len(resource_issues) > 2:
+                performance_anomalies.append({
+                    'type': 'resource_constraints',
+                    'description': f'Resource constraint indicators found ({len(resource_issues)} issues)',
+                    'severity': 'medium',
+                    'affected_items': len(resource_issues),
+                    'recommendation': 'Monitor and optimize resource usage'
+                })
+            
+            return performance_anomalies
+            
+        except Exception as e:
+            logger.exception(f"Error detecting performance anomalies: {str(e)}")
+            return []
 
     def detect_anomalies(self, scan_data):
-        logger.info(f"DEBUG: scan_data = {type(scan_data)} with {len(scan_data) if hasattr(scan_data, '__len__') else 'no length'}")
-        """Enhanced anomaly detection including scan failures"""
-        # Try existing detection methods first
-        if isinstance(scan_data, dict):
-            base_result = self._detect_with_statistics(scan_data)
+        """Main anomaly detection method - FIXED for dictionary input"""
+        try:
+            logger.info(f"Running enhanced anomaly detection on {len(scan_data)} scan results")
             
-            # ADD NEW ENHANCEMENTS HERE
-            # Get smart thresholds for this scan
-            self.smart_thresholds = self._get_smart_thresholds(scan_data)
+            all_anomalies = []
             
-            # Add behavioral anomalies to existing results
-            behavioral_anomalies = self._detect_behavioral_patterns(scan_data)
-            base_result['anomalies'].extend(behavioral_anomalies)
-            
-            # Add infrastructure anomalies
-            infra_anomalies = self._detect_infrastructure_patterns(scan_data)
-            base_result['anomalies'].extend(infra_anomalies)
-            
-            # Add security pattern anomalies
-            security_anomalies = self._detect_security_patterns(scan_data)
-            base_result['anomalies'].extend(security_anomalies)
-            
-            # Recalculate anomaly score with new findings
-            if base_result['anomalies']:
-                total_score = sum(a.get('score', 0.5) for a in base_result['anomalies'])
-                base_result['anomaly_score'] = min(1.0, total_score / len(base_result['anomalies']))
-                base_result['is_anomaly'] = base_result['anomaly_score'] > self.threshold
-            
-            return base_result
-        
-        # If scan_data is actually scan results (from a failed scan)
-        # Detect anomalies from the scan failures themselves
-        if hasattr(scan_data, 'filter') or isinstance(scan_data, list):
+            # Run all anomaly detection methods
             failure_anomalies = self.detect_scan_failure_anomalies(scan_data)
+            security_anomalies = self.detect_security_anomalies(scan_data)
+            performance_anomalies = self.detect_performance_anomalies(scan_data)
             
-            return {
-                'is_anomaly': len(failure_anomalies) > 0,
-                'anomaly_score': 1.0 if failure_anomalies else 0.0,
+            # Combine all anomalies
+            all_anomalies.extend(failure_anomalies)
+            all_anomalies.extend(security_anomalies)
+            all_anomalies.extend(performance_anomalies)
+            
+            # Calculate overall anomaly score
+            anomaly_score = min(1.0, len(all_anomalies) * 0.2)  # 0.2 per anomaly, max 1.0
+            
+            result = {
+                'is_anomaly': len(all_anomalies) > 0,
+                'anomaly_score': anomaly_score,
+                'anomalies': all_anomalies,
                 'model_based': False,
-                'anomalies': failure_anomalies
+                'detection_method': 'enhanced_statistical'
+            }
+            
+            logger.info(f"Enhanced anomaly detection completed: {result}")
+            
+            return result
+            
+        except Exception as e:
+            logger.exception(f"Error in enhanced anomaly detection: {str(e)}")
+            return {
+                'is_anomaly': False,
+                'anomaly_score': 0.0,
+                'anomalies': [],
+                'model_based': False,
+                'error': str(e)
             }
         
-        # Fallback to existing logic
-        return self._detect_with_statistics(scan_data)
-    
     def _detect_with_model(self, scan_data):
         """Use trained model to detect anomalies"""
         try:
