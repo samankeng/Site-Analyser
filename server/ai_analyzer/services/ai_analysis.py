@@ -12,6 +12,7 @@ from ..models import AIAnalysis, AIRecommendation
 from scanner.models import ScanResult
 from integrations.shodan_service import ShodanService
 from ai_analyzer.services.threat_intelligence import ThreatIntelligence
+from django.utils import timezone
 
 # Set up more detailed logging
 logger = logging.getLogger(__name__)
@@ -633,27 +634,48 @@ class AIAnalysisService:
             return {'threat_count': 0, 'threats': [], 'confidence': 0, 'error': str(e)}
     
     def _run_anomaly_detection(self, scan_results, analysis):
-        """Run enhanced anomaly detection analysis with better error handling"""
+        """Run enhanced anomaly detection with proper data formatting"""
         try:
-            # Import your enhanced anomaly detection model
-            from ai_analyzer.ml.anomaly_detection.model import AnomalyDetectionModel
-            
             logger.info("Starting enhanced anomaly detection analysis")
             
-            # Initialize the enhanced anomaly detector
-            anomaly_detector = AnomalyDetectionModel()
+            # Convert Django QuerySet to the format your anomaly detector expects
+            scan_results_list = []
             
-            # Convert QuerySet to list for your enhanced detection
-            scan_results_list = list(scan_results)
+            for result in scan_results:
+                # Format each ScanResult as a dictionary that your anomaly detector can understand
+                formatted_result = {
+                    'id': result.id,
+                    'category': result.category,
+                    'name': result.name,
+                    'description': result.description,
+                    'severity': result.severity,
+                    'details': result.details if hasattr(result, 'details') else {},
+                    'created_at': result.created_at.isoformat() if hasattr(result, 'created_at') else None,
+                    'scan_id': str(self.scan.id),
+                    'target_url': self.scan.target_url
+                }
+                scan_results_list.append(formatted_result)
             
-            logger.info(f"Running enhanced anomaly detection on {len(scan_results_list)} scan results")
+            logger.info(f"Formatted {len(scan_results_list)} scan results for anomaly detection")
             
-            # Use your enhanced detect_anomalies method that handles:
-            # - SSL issues, timeouts, connection failures
-            # - Performance degradation, security headers  
-            # - Development environment indicators
-            # - Attack patterns, etc.
-            anomaly_results = anomaly_detector.detect_anomalies(scan_results_list)
+            # Debug: Log first few results to see the format
+            if scan_results_list:
+                logger.info(f"Sample formatted result: {scan_results_list[0]}")
+                
+            # Now call your enhanced connection anomaly detection
+            # This should match the format your frontend anomalyService.detectConnectionAnomalies expects
+            try:
+                # Import your enhanced detection (might be in a different location)
+                from ai_analyzer.ml.anomaly_detection.model import AnomalyDetectionModel
+                anomaly_detector = AnomalyDetectionModel()
+                
+                # Use the properly formatted data
+                anomaly_results = anomaly_detector.detect_anomalies(scan_results_list)
+                
+            except ImportError:
+                # If the ML model isn't available, use your enhanced logic directly
+                logger.warning("ML anomaly model not available, using direct enhanced detection")
+                anomaly_results = self._run_enhanced_connection_anomaly_detection(scan_results_list)
             
             logger.info(f"Enhanced anomaly detection completed: {anomaly_results}")
             
@@ -674,7 +696,7 @@ class AIAnalysisService:
                                 'component': anomaly.get('component', ''),
                                 'details': anomaly.get('details', {}),
                                 'is_false_positive': anomaly.get('is_false_positive', False),
-                                'detection_method': 'enhanced_ml_detection'
+                                'detection_method': 'enhanced_connection_detection'
                             }
                         )
                         logger.info(f"Created enhanced anomaly recommendation: {anomaly.get('component')}")
@@ -689,17 +711,12 @@ class AIAnalysisService:
                 'anomaly_score': anomaly_results.get('anomaly_score', 0.0),
                 'model_based': anomaly_results.get('model_based', False),
                 'confidence': 0.9 if anomaly_results.get('anomalies') else 0.5,
-                'detection_method': 'enhanced_ml_anomaly_detection'
+                'detection_method': 'enhanced_connection_anomaly_detection'
             }
             
             logger.info(f"Enhanced anomaly detection found {enhanced_results['anomaly_count']} anomalies with score {enhanced_results['anomaly_score']}")
             
             return enhanced_results
-            
-        except ImportError as e:
-            logger.error(f"Could not import enhanced anomaly detection model: {str(e)}")
-            # Fallback to your original SSL-only detection
-            return self._run_fallback_ssl_anomaly_detection(scan_results, analysis)
             
         except Exception as e:
             logger.exception(f"Error in enhanced anomaly detection: {str(e)}")
@@ -710,6 +727,124 @@ class AIAnalysisService:
                 'error': str(e),
                 'detection_method': 'error_fallback'
             }
+
+    def _run_enhanced_connection_anomaly_detection(self, scan_results_list):
+        """
+        Enhanced connection anomaly detection logic 
+        (ported from your frontend anomalyService.detectConnectionAnomalies)
+        """
+        anomalies = []
+        
+        logger.info(f"Analyzing {len(scan_results_list)} scan results for connection anomalies...")
+        
+        # SSL certificate issues
+        ssl_errors = [r for r in scan_results_list if 
+                    'certificate' in r.get('description', '').lower() or
+                    'SSL: CERTIFICATE_VERIFY_FAILED' in r.get('description', '') or
+                    'ssl' in r.get('name', '').lower() and 'expired' in r.get('description', '')]
+        
+        if ssl_errors:
+            logger.info(f"Found {len(ssl_errors)} SSL certificate errors")
+            anomalies.append({
+                'id': f'ssl-expired-{int(time.time())}',
+                'component': 'SSL Certificate',
+                'description': f'SSL certificate issues detected, causing {len(ssl_errors)} connection failures',
+                'severity': 'high',
+                'recommendation': 'Renew the SSL certificate immediately to restore secure HTTPS connections',
+                'score': 1.0,
+                'is_false_positive': False,
+                'created_at': timezone.now().isoformat(),
+                'details': {
+                    'affected_scans': [e.get('category') for e in ssl_errors],
+                    'error_count': len(ssl_errors)
+                }
+            })
+        
+        # Timeout issues
+        timeouts = [r for r in scan_results_list if 
+                    'timeout' in r.get('description', '').lower() or
+                    'SoftTimeLimitExceeded' in r.get('description', '')]
+        
+        if timeouts:
+            logger.info(f"Found {len(timeouts)} timeout errors")
+            anomalies.append({
+                'id': f'timeout-{int(time.time())}',
+                'component': 'Performance',
+                'description': f'Scan timeouts detected ({len(timeouts)} operations timed out)',
+                'severity': 'medium',
+                'recommendation': 'Investigate server performance issues and optimize response times',
+                'score': 0.7,
+                'is_false_positive': False,
+                'created_at': timezone.now().isoformat(),
+                'details': {'timeout_count': len(timeouts)}
+            })
+        
+        # Connection failures
+        connection_failures = [r for r in scan_results_list if 
+                            'Failed to connect' in r.get('description', '') or
+                            'Connection refused' in r.get('description', '') or
+                            'Connection error' in r.get('description', '')]
+        
+        if len(connection_failures) > 3:
+            logger.info(f"Found {len(connection_failures)} connection failures")
+            anomalies.append({
+                'id': f'connection-failures-{int(time.time())}',
+                'component': 'Website Availability',
+                'description': f'Multiple connection failures detected ({len(connection_failures)} failed attempts)',
+                'severity': 'high',
+                'recommendation': 'Check server availability, DNS resolution, and network connectivity',
+                'score': 0.9,
+                'is_false_positive': False,
+                'created_at': timezone.now().isoformat(),
+                'details': {'failure_count': len(connection_failures)}
+            })
+        
+        # Security header clustering (many missing headers)
+        header_results = [r for r in scan_results_list if r.get('category') == 'headers']
+        critical_header_issues = [h for h in header_results if h.get('severity') in ['high', 'critical']]
+        
+        if len(critical_header_issues) > 5:
+            anomalies.append({
+                'id': f'security-header-cluster-{int(time.time())}',
+                'component': 'Security Headers',
+                'description': f'Multiple critical security headers missing ({len(critical_header_issues)} issues)',
+                'severity': 'high',
+                'recommendation': 'Implement comprehensive security header policy',
+                'score': 0.85,
+                'is_false_positive': False,
+                'created_at': timezone.now().isoformat(),
+                'details': {'issue_count': len(critical_header_issues)}
+            })
+        
+        # Check for overall high issue count (like your security score of 26/100)
+        total_scans = len(scan_results_list)
+        high_severity_issues = [r for r in scan_results_list if r.get('severity') in ['high', 'critical']]
+        
+        if len(high_severity_issues) > total_scans * 0.3:  # More than 30% high severity
+            anomalies.append({
+                'id': f'high-severity-cluster-{int(time.time())}',
+                'component': 'Overall Security',
+                'description': f'High concentration of severe security issues ({len(high_severity_issues)}/{total_scans})',
+                'severity': 'critical',
+                'recommendation': 'Immediate security review and remediation required',
+                'score': 1.0,
+                'is_false_positive': False,
+                'created_at': timezone.now().isoformat(),
+                'details': {
+                    'high_severity_count': len(high_severity_issues),
+                    'total_issues': total_scans,
+                    'severity_percentage': round((len(high_severity_issues) / total_scans) * 100)
+                }
+            })
+        
+        logger.info(f"Enhanced connection anomaly detection found {len(anomalies)} anomalies")
+        
+        return {
+            'is_anomaly': len(anomalies) > 0,
+            'anomaly_score': min(1.0, len(anomalies) * 0.3),
+            'anomalies': anomalies,
+            'model_based': False
+        }
 
     def _run_fallback_ssl_anomaly_detection(self, scan_results, analysis):
         """Fallback to original SSL-only anomaly detection if enhanced version fails"""
