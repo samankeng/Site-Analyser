@@ -633,7 +633,88 @@ class AIAnalysisService:
             return {'threat_count': 0, 'threats': [], 'confidence': 0, 'error': str(e)}
     
     def _run_anomaly_detection(self, scan_results, analysis):
-        """Run anomaly detection analysis with better error handling"""
+        """Run enhanced anomaly detection analysis with better error handling"""
+        try:
+            # Import your enhanced anomaly detection model
+            from ai_analyzer.ml.anomaly_detection.model import AnomalyDetectionModel
+            
+            logger.info("Starting enhanced anomaly detection analysis")
+            
+            # Initialize the enhanced anomaly detector
+            anomaly_detector = AnomalyDetectionModel()
+            
+            # Convert QuerySet to list for your enhanced detection
+            scan_results_list = list(scan_results)
+            
+            logger.info(f"Running enhanced anomaly detection on {len(scan_results_list)} scan results")
+            
+            # Use your enhanced detect_anomalies method that handles:
+            # - SSL issues, timeouts, connection failures
+            # - Performance degradation, security headers  
+            # - Development environment indicators
+            # - Attack patterns, etc.
+            anomaly_results = anomaly_detector.detect_anomalies(scan_results_list)
+            
+            logger.info(f"Enhanced anomaly detection completed: {anomaly_results}")
+            
+            # Create recommendations from enhanced anomaly detection
+            if anomaly_results.get('anomalies'):
+                for anomaly in anomaly_results['anomalies']:
+                    try:
+                        AIRecommendation.objects.create(
+                            analysis=analysis,
+                            title=f"Enhanced Anomaly: {anomaly.get('component', 'Unknown Component')}",
+                            description=anomaly.get('description', 'Anomaly detected'),
+                            severity=anomaly.get('severity', 'medium'),
+                            recommendation=anomaly.get('recommendation', 'Review and address this anomaly'),
+                            recommendation_type='anomaly_detection',
+                            confidence_score=anomaly.get('score', 0.5),
+                            metadata={
+                                'anomaly_id': anomaly.get('id', ''),
+                                'component': anomaly.get('component', ''),
+                                'details': anomaly.get('details', {}),
+                                'is_false_positive': anomaly.get('is_false_positive', False),
+                                'detection_method': 'enhanced_ml_detection'
+                            }
+                        )
+                        logger.info(f"Created enhanced anomaly recommendation: {anomaly.get('component')}")
+                    except Exception as e:
+                        logger.error(f"Error creating enhanced anomaly recommendation: {str(e)}")
+            
+            # Return enhanced results
+            enhanced_results = {
+                'anomaly_count': len(anomaly_results.get('anomalies', [])),
+                'anomalies': anomaly_results.get('anomalies', []),
+                'is_anomaly': anomaly_results.get('is_anomaly', False),
+                'anomaly_score': anomaly_results.get('anomaly_score', 0.0),
+                'model_based': anomaly_results.get('model_based', False),
+                'confidence': 0.9 if anomaly_results.get('anomalies') else 0.5,
+                'detection_method': 'enhanced_ml_anomaly_detection'
+            }
+            
+            logger.info(f"Enhanced anomaly detection found {enhanced_results['anomaly_count']} anomalies with score {enhanced_results['anomaly_score']}")
+            
+            return enhanced_results
+            
+        except ImportError as e:
+            logger.error(f"Could not import enhanced anomaly detection model: {str(e)}")
+            # Fallback to your original SSL-only detection
+            return self._run_fallback_ssl_anomaly_detection(scan_results, analysis)
+            
+        except Exception as e:
+            logger.exception(f"Error in enhanced anomaly detection: {str(e)}")
+            return {
+                'anomaly_count': 0, 
+                'anomalies': [], 
+                'confidence': 0, 
+                'error': str(e),
+                'detection_method': 'error_fallback'
+            }
+
+    def _run_fallback_ssl_anomaly_detection(self, scan_results, analysis):
+        """Fallback to original SSL-only anomaly detection if enhanced version fails"""
+        logger.warning("Using fallback SSL-only anomaly detection")
+        
         try:
             ssl_data = []
             for result in scan_results.filter(category='ssl'):
@@ -652,21 +733,22 @@ class AIAnalysisService:
                 try:
                     AIRecommendation.objects.create(
                         analysis=analysis,
-                        title=f"Detected anomaly in {anomaly['component']}",
+                        title=f"SSL Anomaly: {anomaly['component']}",
                         description=anomaly['description'],
                         severity=anomaly['severity'],
                         recommendation=anomaly['recommendation'],
-                        recommendation_type='security',
+                        recommendation_type='ssl_anomaly',
                         confidence_score=anomaly['score']
                     )
                 except Exception as e:
-                    logger.error(f"Error creating recommendation: {str(e)}")
+                    logger.error(f"Error creating SSL anomaly recommendation: {str(e)}")
             
             anomaly_results['confidence'] = 0.85 if anomaly_results.get('anomalies') else 0.5
+            anomaly_results['detection_method'] = 'fallback_ssl_only'
             return anomaly_results
                 
         except Exception as e:
-            logger.exception(f"Error in anomaly detection: {str(e)}")
+            logger.exception(f"Error in fallback SSL anomaly detection: {str(e)}")
             return {'anomaly_count': 0, 'anomalies': [], 'confidence': 0, 'error': str(e)}
     
     def _run_risk_scoring(self, scan_results, analysis):
