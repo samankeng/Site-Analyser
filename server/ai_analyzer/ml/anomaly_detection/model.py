@@ -183,7 +183,7 @@ class AnomalyDetectionModel:
         return anomalies
 
     def detect_anomalies(self, scan_data):
-        print(f"DEBUG: scan_data = {type(scan_data)} with {len(scan_data) if hasattr(scan_data, '__len__') else 'no length'}")
+        logger.info(f"DEBUG: scan_data = {type(scan_data)} with {len(scan_data) if hasattr(scan_data, '__len__') else 'no length'}")
         """Enhanced anomaly detection including scan failures"""
         # Try existing detection methods first
         if isinstance(scan_data, dict):
