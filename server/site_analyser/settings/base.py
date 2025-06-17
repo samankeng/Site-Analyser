@@ -384,65 +384,49 @@ THREAT_INTEL_CACHE_TIMEOUT = int(os.environ.get('THREAT_INTEL_CACHE_TIMEOUT', 86
 THREAT_INTEL_MOCK_ENABLED = bool(os.environ.get('THREAT_INTEL_MOCK_ENABLED', True))
 
 
-# CSP Settings - Optimized for React Frontend
-CSP_DEFAULT_SRC = ("'self'",)
+# NEW django-csp v4.0+ format:
+CONTENT_SECURITY_POLICY = {
+    'DIRECTIVES': {
+        'default-src': ("'self'",),
+        'script-src': (
+            "'self'", 
+            "'unsafe-inline'", 
+            "'unsafe-eval'",
+            "https://cdnjs.cloudflare.com",  # If you use CDN scripts
+        ),
+        'style-src': (
+            "'self'", 
+            "'unsafe-inline'",
+            "https://fonts.googleapis.com",  # Google Fonts CSS
+        ),
+        'img-src': (
+            "'self'", 
+            "data:", 
+            "https:", 
+            "blob:",  # For generated images
+        ),
+        'font-src': (
+            "'self'", 
+            "https:", 
+            "data:",
+            "https://fonts.gstatic.com",  # Google Fonts
+        ),
+        'connect-src': (
+            "'self'", 
+            "https:", 
+            "wss:", 
+            "ws:",
+            "https://humble-spirit-production.up.railway.app",  # Your backend API
+            "http://localhost:8000",  # Local development API
+        ),
+        'frame-ancestors': ("'none'",),
+        'base-uri': ("'self'",),
+        'object-src': ("'none'",),
+        'form-action': ("'self'",),
+    }
+}
 
-# React needs unsafe-inline and unsafe-eval for development builds
-# In production, consider using nonces or hashes for better security
-CSP_SCRIPT_SRC = (
-    "'self'", 
-    "'unsafe-inline'", 
-    "'unsafe-eval'",
-    "https://cdnjs.cloudflare.com",  # If you use any CDN scripts
-)
 
-# CSS-in-JS libraries like styled-components need unsafe-inline
-CSP_STYLE_SRC = (
-    "'self'", 
-    "'unsafe-inline'",
-    "https://fonts.googleapis.com",  # If you use Google Fonts
-)
-
-# Images from your domain, data URLs, and HTTPS sources
-CSP_IMG_SRC = (
-    "'self'", 
-    "data:", 
-    "https:",
-    "blob:",  # For generated images
-)
-
-# Fonts from your domain, Google Fonts, and data URLs
-CSP_FONT_SRC = (
-    "'self'", 
-    "https:", 
-    "data:",
-    "https://fonts.gstatic.com",  # Google Fonts
-)
-
-# API calls, WebSockets, and HTTPS connections
-CSP_CONNECT_SRC = (
-    "'self'", 
-    "https:", 
-    "wss:", 
-    "ws:",
-    "https://humble-spirit-production.up.railway.app",  # Your backend API
-    "http://localhost:8000",  # Local development API
-)
-
-# Prevent your site from being embedded in frames
-CSP_FRAME_ANCESTORS = ("'none'",)
-
-# Only allow resources from your domain as base URI
-CSP_BASE_URI = ("'self'",)
-
-# Block object/embed/applet elements
-CSP_OBJECT_SRC = ("'none'",)
-
-# Control where forms can be submitted
-CSP_FORM_ACTION = ("'self'",)
-
-# Block legacy features
-CSP_PLUGIN_TYPES = ()
 
 # Permissions Policy (replaces Feature Policy)
 PERMISSIONS_POLICY = {
