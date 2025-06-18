@@ -688,6 +688,7 @@ class AIAnalysisService:
                             anomaly.get('type', anomaly.get('component', 'unknown'))
                         )
                         
+                        # CREATE AIRecommendation record (existing logic)
                         AIRecommendation.objects.create(
                             analysis=analysis,
                             title=f"Enhanced Anomaly: {component_name}",  # FIXED: Use mapped component name
@@ -706,8 +707,24 @@ class AIAnalysisService:
                             }
                         )
                         logger.info(f"Created enhanced anomaly recommendation: {component_name}")
+                        
+                        # NEW: ALSO CREATE Anomaly model record in ai_analyzer_anomaly table
+                        from ..models import Anomaly
+                        Anomaly.objects.create(
+                            scan_id=str(self.scan.id),  # FIXED: scan_id field (not scan)
+                            component=component_name,
+                            severity=anomaly.get('severity', 'medium'),
+                            description=anomaly.get('description', 'Anomaly detected'),
+                            details=anomaly.get('details', {}),
+                            score=anomaly.get('score', 0.5),
+                            is_false_positive=False,
+                            recommendation=anomaly.get('recommendation', 'Review and address this anomaly')
+                            # REMOVED: anomaly_type field (doesn't exist in your table)
+                        )
+                        logger.info(f"Created Anomaly model record: {component_name}")
+                        
                     except Exception as e:
-                        logger.error(f"Error creating enhanced anomaly recommendation: {str(e)}")
+                        logger.error(f"Error creating anomaly records: {str(e)}")
             
             # Return enhanced results
             enhanced_results = {
