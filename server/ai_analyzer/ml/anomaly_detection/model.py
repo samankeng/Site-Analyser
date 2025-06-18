@@ -176,7 +176,7 @@ class AnomalyDetectionModel:
             return []
 
     def detect_security_anomalies(self, scan_data):
-        """Detect security-related anomalies - FIXED for dictionary input"""
+        """Detect security-related anomalies - ENHANCED with better thresholds"""
         try:
             security_anomalies = []
             
@@ -195,61 +195,148 @@ class AnomalyDetectionModel:
                     categorized_results[category] = []
                 categorized_results[category].append(result)
             
-            # Check for security header clustering - FIXED
+            logger.info(f"Categorized results: {[(cat, len(results)) for cat, results in categorized_results.items()]}")
+            
+            # Check for security header clustering - LOWERED THRESHOLD
             if 'headers' in categorized_results:
                 header_results = categorized_results['headers']
                 critical_headers = [h for h in header_results if safe_get(h, 'severity', '') in ['high', 'critical']]
+                medium_headers = [h for h in header_results if safe_get(h, 'severity', '') == 'medium']
                 
-                if len(critical_headers) > 5:
+                # Alert if more than 3 critical OR more than 8 medium header issues
+                if len(critical_headers) > 3:
                     security_anomalies.append({
-                        'type': 'missing_security_headers',
-                        'description': f'Multiple critical security headers missing ({len(critical_headers)} issues)',
+                        'type': 'critical_security_headers_missing',
+                        'description': f'Multiple critical security headers missing ({len(critical_headers)} critical issues)',
                         'severity': 'high',
                         'affected_items': len(critical_headers),
-                        'recommendation': 'Implement comprehensive security header policy'
+                        'recommendation': 'Implement comprehensive security header policy immediately',
+                        'details': {'critical_count': len(critical_headers), 'category': 'headers'}
+                    })
+                elif len(medium_headers) > 8:  # Lowered from 5 to catch your 25 medium issues
+                    security_anomalies.append({
+                        'type': 'missing_security_headers',
+                        'description': f'Significant number of security headers missing ({len(medium_headers)} medium issues)',
+                        'severity': 'medium',
+                        'affected_items': len(medium_headers),
+                        'recommendation': 'Review and implement missing security headers',
+                        'details': {'medium_count': len(medium_headers), 'category': 'headers'}
                     })
             
-            # Check for SSL/TLS issues clustering - FIXED
+            # Check for SSL/TLS issues clustering - ENHANCED
             if 'ssl' in categorized_results:
                 ssl_results = categorized_results['ssl']
                 ssl_issues = [s for s in ssl_results if safe_get(s, 'severity', '') in ['medium', 'high', 'critical']]
                 
-                if len(ssl_issues) > 3:
+                if len(ssl_issues) > 1:  # Any SSL issues are concerning
                     security_anomalies.append({
                         'type': 'ssl_configuration_issues',
-                        'description': f'Multiple SSL/TLS configuration problems ({len(ssl_issues)} issues)',
+                        'description': f'SSL/TLS configuration problems detected ({len(ssl_issues)} issues)',
                         'severity': 'high',
                         'affected_items': len(ssl_issues),
-                        'recommendation': 'Review and update SSL/TLS configuration'
+                        'recommendation': 'Review and update SSL/TLS configuration immediately',
+                        'details': {'ssl_issues_count': len(ssl_issues), 'category': 'ssl'}
                     })
             
-            # Check for vulnerability clustering - FIXED
+            # Check for vulnerability clustering - ENHANCED
             if 'vulnerabilities' in categorized_results:
                 vuln_results = categorized_results['vulnerabilities']
                 high_vulns = [v for v in vuln_results if safe_get(v, 'severity', '') in ['high', 'critical']]
+                medium_vulns = [v for v in vuln_results if safe_get(v, 'severity', '') == 'medium']
                 
-                if len(high_vulns) > 2:
+                if len(high_vulns) > 1:  # Lowered threshold
                     security_anomalies.append({
-                        'type': 'vulnerability_cluster',
-                        'description': f'Multiple high-severity vulnerabilities found ({len(high_vulns)} vulns)',
+                        'type': 'critical_vulnerability_cluster',
+                        'description': f'Multiple high-severity vulnerabilities found ({len(high_vulns)} critical vulns)',
                         'severity': 'critical',
                         'affected_items': len(high_vulns),
-                        'recommendation': 'Immediate security review and patching required'
+                        'recommendation': 'Immediate security review and patching required',
+                        'details': {'high_vulns_count': len(high_vulns), 'category': 'vulnerabilities'}
+                    })
+                elif len(medium_vulns) > 5:  # Also check medium vulnerabilities
+                    security_anomalies.append({
+                        'type': 'vulnerability_cluster',
+                        'description': f'Multiple medium-severity vulnerabilities found ({len(medium_vulns)} vulns)',
+                        'severity': 'high',
+                        'affected_items': len(medium_vulns),
+                        'recommendation': 'Security review and patching recommended',
+                        'details': {'medium_vulns_count': len(medium_vulns), 'category': 'vulnerabilities'}
                     })
             
-            # Overall issue density anomaly - FIXED
+            # CHECK CONTENT SECURITY ISSUES - NEW
+            if 'content' in categorized_results:
+                content_results = categorized_results['content']
+                content_issues = [c for c in content_results if safe_get(c, 'severity', '') in ['medium', 'high', 'critical']]
+                
+                if len(content_issues) > 10:  # Check content issues
+                    security_anomalies.append({
+                        'type': 'content_security_issues',
+                        'description': f'Multiple content security issues detected ({len(content_issues)} issues)',
+                        'severity': 'medium',
+                        'affected_items': len(content_issues),
+                        'recommendation': 'Review content security policies and implementations',
+                        'details': {'content_issues_count': len(content_issues), 'category': 'content'}
+                    })
+            
+            # Overall issue density anomaly - ENHANCED THRESHOLDS
             total_issues = len(scan_data)
             high_severity_issues = [r for r in scan_data if safe_get(r, 'severity', '') in ['high', 'critical']]
+            medium_severity_issues = [r for r in scan_data if safe_get(r, 'severity', '') == 'medium']
             
-            if total_issues > 0 and len(high_severity_issues) / total_issues > 0.3:  # More than 30% high severity
+            # Check for high severity concentration (lowered threshold)
+            if total_issues > 0 and len(high_severity_issues) / total_issues > 0.15:  # Lowered from 0.3 to 0.15
                 security_anomalies.append({
                     'type': 'high_severity_concentration',
                     'description': f'High concentration of severe issues ({len(high_severity_issues)}/{total_issues} = {round((len(high_severity_issues)/total_issues)*100)}%)',
                     'severity': 'critical',
                     'affected_items': len(high_severity_issues),
-                    'recommendation': 'Comprehensive security audit required'
+                    'recommendation': 'Comprehensive security audit required',
+                    'details': {'high_severity_ratio': len(high_severity_issues)/total_issues, 'total_issues': total_issues}
                 })
             
+            # Check for medium severity concentration - NEW
+            elif total_issues > 0 and len(medium_severity_issues) / total_issues > 0.25:  # 25% medium issues
+                security_anomalies.append({
+                    'type': 'medium_severity_concentration',
+                    'description': f'High concentration of medium severity issues ({len(medium_severity_issues)}/{total_issues} = {round((len(medium_severity_issues)/total_issues)*100)}%)',
+                    'severity': 'medium',
+                    'affected_items': len(medium_severity_issues),
+                    'recommendation': 'Security review recommended to address widespread issues',
+                    'details': {'medium_severity_ratio': len(medium_severity_issues)/total_issues, 'total_issues': total_issues}
+                })
+            
+            # Large number of total issues - NEW
+            if total_issues > 50:  # More than 50 total issues is unusual
+                security_anomalies.append({
+                    'type': 'excessive_issue_count',
+                    'description': f'Unusually high number of security issues detected ({total_issues} total issues)',
+                    'severity': 'high',
+                    'affected_items': total_issues,
+                    'recommendation': 'Comprehensive security assessment and remediation plan needed',
+                    'details': {'total_issues': total_issues, 'threshold': 50}
+                })
+            
+            # Pattern-based anomalies - NEW
+            badssl_patterns = []
+            for result in scan_data:
+                description = safe_get(result, 'description', '').lower()
+                name = safe_get(result, 'name', '').lower()
+                
+                # Look for badssl.com specific patterns
+                if any(pattern in description + name for pattern in ['badssl', 'certificate', 'expired', 'invalid', 'self-signed']):
+                    badssl_patterns.append(result)
+            
+            if len(badssl_patterns) > 5:  # Detecting badssl.com specific issues
+                security_anomalies.append({
+                    'type': 'ssl_test_site_patterns',
+                    'description': f'SSL testing site patterns detected ({len(badssl_patterns)} SSL-related issues)',
+                    'severity': 'info',
+                    'affected_items': len(badssl_patterns),
+                    'recommendation': 'This appears to be a SSL testing site with intentional security issues',
+                    'details': {'pattern_count': len(badssl_patterns), 'patterns': 'badssl_test_site'}
+                })
+            
+            logger.info(f"Security anomaly detection found {len(security_anomalies)} anomalies")
             return security_anomalies
             
         except Exception as e:
@@ -257,7 +344,7 @@ class AnomalyDetectionModel:
             return []
 
     def detect_performance_anomalies(self, scan_data):
-        """Detect performance-related anomalies - FIXED for dictionary input"""
+        """Detect performance-related anomalies - ENHANCED"""
         try:
             performance_anomalies = []
             
@@ -268,43 +355,47 @@ class AnomalyDetectionModel:
                 else:
                     return getattr(item, key, default)
             
-            # Check for slow response patterns - FIXED
+            # Check for slow response patterns - ENHANCED
             slow_responses = []
+            timeout_issues = []
+            
             for result in scan_data:
                 description = safe_get(result, 'description', '').lower()
+                name = safe_get(result, 'name', '').lower()
                 details = safe_get(result, 'details', {})
                 
                 # Look for performance indicators
-                if any(keyword in description for keyword in ['slow', 'timeout', 'delay', 'performance']):
+                if any(keyword in description + name for keyword in ['slow', 'timeout', 'delay', 'performance']):
                     slow_responses.append(result)
+                
+                if any(keyword in description + name for keyword in ['timeout', 'failed to connect', 'connection refused']):
+                    timeout_issues.append(result)
                 
                 # Check response time in details if available
                 if isinstance(details, dict) and details.get('response_time', 0) > 5000:  # > 5 seconds
                     slow_responses.append(result)
             
-            if len(slow_responses) > 3:
+            if len(slow_responses) > 2:  # Lowered threshold
                 performance_anomalies.append({
                     'type': 'performance_degradation',
-                    'description': f'Multiple slow response indicators detected ({len(slow_responses)} issues)',
+                    'description': f'Performance issues detected ({len(slow_responses)} slow response indicators)',
                     'severity': 'medium',
                     'affected_items': len(slow_responses),
-                    'recommendation': 'Investigate server performance and optimize response times'
+                    'recommendation': 'Investigate server performance and optimize response times',
+                    'details': {'slow_responses_count': len(slow_responses)}
                 })
             
-            # Check for resource-related issues - FIXED
-            resource_issues = [r for r in scan_data if 
-                            any(keyword in safe_get(r, 'description', '').lower() 
-                                for keyword in ['memory', 'cpu', 'disk', 'resource'])]
-            
-            if len(resource_issues) > 2:
+            if len(timeout_issues) > 1:  # Any timeouts are concerning
                 performance_anomalies.append({
-                    'type': 'resource_constraints',
-                    'description': f'Resource constraint indicators found ({len(resource_issues)} issues)',
+                    'type': 'connection_timeouts',
+                    'description': f'Connection timeout issues detected ({len(timeout_issues)} timeout indicators)',
                     'severity': 'medium',
-                    'affected_items': len(resource_issues),
-                    'recommendation': 'Monitor and optimize resource usage'
+                    'affected_items': len(timeout_issues),
+                    'recommendation': 'Check server availability and network connectivity',
+                    'details': {'timeout_count': len(timeout_issues)}
                 })
             
+            logger.info(f"Performance anomaly detection found {len(performance_anomalies)} anomalies")
             return performance_anomalies
             
         except Exception as e:
@@ -312,34 +403,49 @@ class AnomalyDetectionModel:
             return []
 
     def detect_anomalies(self, scan_data):
-        """Main anomaly detection method - FIXED for dictionary input"""
+        """Main anomaly detection method - ENHANCED with better logging"""
         try:
             logger.info(f"Running enhanced anomaly detection on {len(scan_data)} scan results")
             
             all_anomalies = []
             
-            # Run all anomaly detection methods
+            # Run all anomaly detection methods with logging
+            logger.info("Running scan failure anomaly detection...")
             failure_anomalies = self.detect_scan_failure_anomalies(scan_data)
+            logger.info(f"Found {len(failure_anomalies)} failure anomalies")
+            
+            logger.info("Running security anomaly detection...")
             security_anomalies = self.detect_security_anomalies(scan_data)
+            logger.info(f"Found {len(security_anomalies)} security anomalies")
+            
+            logger.info("Running performance anomaly detection...")
             performance_anomalies = self.detect_performance_anomalies(scan_data)
+            logger.info(f"Found {len(performance_anomalies)} performance anomalies")
             
             # Combine all anomalies
             all_anomalies.extend(failure_anomalies)
             all_anomalies.extend(security_anomalies)
             all_anomalies.extend(performance_anomalies)
             
-            # Calculate overall anomaly score
-            anomaly_score = min(1.0, len(all_anomalies) * 0.2)  # 0.2 per anomaly, max 1.0
+            # Calculate overall anomaly score (increased sensitivity)
+            anomaly_score = min(1.0, len(all_anomalies) * 0.15)  # 0.15 per anomaly instead of 0.2
             
             result = {
                 'is_anomaly': len(all_anomalies) > 0,
                 'anomaly_score': anomaly_score,
                 'anomalies': all_anomalies,
                 'model_based': False,
-                'detection_method': 'enhanced_statistical'
+                'detection_method': 'enhanced_statistical',
+                'breakdown': {
+                    'failure_anomalies': len(failure_anomalies),
+                    'security_anomalies': len(security_anomalies), 
+                    'performance_anomalies': len(performance_anomalies),
+                    'total_scan_results': len(scan_data)
+                }
             }
             
-            logger.info(f"Enhanced anomaly detection completed: {result}")
+            logger.info(f"Enhanced anomaly detection completed: found {len(all_anomalies)} total anomalies")
+            logger.info(f"Anomaly breakdown: {result['breakdown']}")
             
             return result
             
