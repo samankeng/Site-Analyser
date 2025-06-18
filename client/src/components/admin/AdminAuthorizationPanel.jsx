@@ -60,18 +60,18 @@ const AdminAuthorizationPanel = () => {
   };
 
   const calculateStats = useCallback(() => {
-  const now = new Date();
-  const stats = {
-    total: authorizations.length,
-    pending: authorizations.filter(auth => auth.status === 'pending').length,
-    verified: authorizations.filter(auth => auth.status === 'verified' && auth.is_active).length,
-    rejected: authorizations.filter(auth =>
-      auth.status === 'rejected' || !auth.is_active ||
-      (auth.expires_at && new Date(auth.expires_at) < now)
-    ).length
-  };
-  setStats(stats);
-}, [authorizations]); // ✅ dependency for memoization
+    const now = new Date();
+    const stats = {
+      total: authorizations.length,
+      pending: authorizations.filter(auth => auth.status === 'pending').length,
+      verified: authorizations.filter(auth => auth.status === 'verified' && auth.is_active).length,
+      rejected: authorizations.filter(auth =>
+        auth.status === 'rejected' || !auth.is_active ||
+        (auth.expires_at && new Date(auth.expires_at) < now)
+      ).length
+    };
+    setStats(stats);
+  }, [authorizations]);
 
   const handleApprove = async (authId) => {
     if (!window.confirm('Are you sure you want to approve this authorization request?')) {
@@ -80,7 +80,6 @@ const AdminAuthorizationPanel = () => {
 
     try {
       setProcessing(true);
-      // Use the new compliance endpoint
       await api.post(`compliance/domain-authorizations/${authId}/approve/`);
       await fetchAuthorizations();
       alert('Authorization approved successfully!');
@@ -99,7 +98,6 @@ const AdminAuthorizationPanel = () => {
 
     try {
       setProcessing(true);
-      // Use the new compliance endpoint
       await api.post(`compliance/domain-authorizations/${authId}/revoke/`);
       await fetchAuthorizations();
       alert('Authorization revoked successfully!');
@@ -135,7 +133,6 @@ const AdminAuthorizationPanel = () => {
   };
 
   const getUrgencyBadge = (auth) => {
-    // Check if authorization was created recently (within 24 hours)
     const createdAt = new Date(auth.created_at || auth.requested_at);
     const now = new Date();
     const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
@@ -144,7 +141,6 @@ const AdminAuthorizationPanel = () => {
       return <span className="badge bg-info ms-2">New</span>;
     }
     
-    // Check if approaching expiration (within 30 days)
     if (auth.expires_at) {
       const validUntil = new Date(auth.expires_at);
       const daysDiff = (validUntil - now) / (1000 * 60 * 60 * 24);
@@ -158,7 +154,6 @@ const AdminAuthorizationPanel = () => {
   };
 
   const filteredAuthorizations = authorizations.filter(auth => {
-    // Status filter
     if (filters.status !== 'all') {
       const now = new Date();
       
@@ -180,12 +175,10 @@ const AdminAuthorizationPanel = () => {
       }
     }
 
-    // Verification method filter
     if (filters.verificationMethod !== 'all' && auth.verification_method !== filters.verificationMethod) {
       return false;
     }
 
-    // Search filter
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
       return (
@@ -200,7 +193,7 @@ const AdminAuthorizationPanel = () => {
 
   if (loading) {
     return (
-      <div className="container mt-4">
+      <div className="container py-4">
         <div className="text-center">
           <div className="spinner-border" role="status">
             <span className="visually-hidden">Loading...</span>
@@ -212,220 +205,208 @@ const AdminAuthorizationPanel = () => {
   }
 
   return (
-    <div className="container-fluid mt-4">
-      <div className="row">
-        <div className="col-12">
-          {/* Header */}
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <div>
-              <h2 className="mb-1">
-                <i className="bi bi-shield-check me-2"></i>
-                Domain Authorization Management
-              </h2>
-              <p className="text-muted mb-0">Review and manage domain authorization requests for active scanning</p>
-            </div>
-            <button 
-              className="btn btn-outline-secondary"
-              onClick={fetchAuthorizations}
-              disabled={loading}
-            >
-              <i className="bi bi-arrow-clockwise me-1"></i>
-              Refresh
-            </button>
-          </div>
+    <div className="container py-4">
+      {/* Header - matching Dashboard.js style */}
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2>Domain Authorization Management</h2>
+        <button 
+          className="btn btn-primary"
+          onClick={fetchAuthorizations}
+          disabled={loading}
+        >
+          <i className="bi bi-arrow-clockwise me-1"></i>
+          Refresh
+        </button>
+      </div>
 
-          {/* Stats Cards */}
-          <div className="row mb-4">
-            <div className="col-lg-3 col-md-6 mb-3">
-              <div className="card border-primary">
-                <div className="card-body text-center">
-                  <h3 className="text-primary mb-1">{stats.total}</h3>
-                  <p className="card-text mb-0">Total Requests</p>
-                </div>
-              </div>
-            </div>
-            <div className="col-lg-3 col-md-6 mb-3">
-              <div className="card border-warning">
-                <div className="card-body text-center">
-                  <h3 className="text-warning mb-1">{stats.pending}</h3>
-                  <p className="card-text mb-0">Pending Approval</p>
-                </div>
-              </div>
-            </div>
-            <div className="col-lg-3 col-md-6 mb-3">
-              <div className="card border-success">
-                <div className="card-body text-center">
-                  <h3 className="text-success mb-1">{stats.verified}</h3>
-                  <p className="card-text mb-0">Verified</p>
-                </div>
-              </div>
-            </div>
-            <div className="col-lg-3 col-md-6 mb-3">
-              <div className="card border-danger">
-                <div className="card-body text-center">
-                  <h3 className="text-danger mb-1">{stats.rejected}</h3>
-                  <p className="card-text mb-0">Expired/Revoked</p>
-                </div>
-              </div>
+      {/* Error Display - matching Dashboard.js style */}
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          {error}
+        </div>
+      )}
+
+      {/* Stats Cards - matching Dashboard.js grid layout */}
+      <div className="row g-4 mb-4">
+        <div className="col-md-3">
+          <div className="card shadow-sm">
+            <div className="card-body text-center">
+              <h3 className="text-primary mb-1">{stats.total}</h3>
+              <p className="card-text mb-0 text-muted">Total Requests</p>
             </div>
           </div>
-
-          {/* Filters */}
-          <div className="card mb-4">
-            <div className="card-body">
-              <div className="row g-3">
-                <div className="col-md-4">
-                  <label className="form-label">Status</label>
-                  <select 
-                    className="form-select"
-                    value={filters.status}
-                    onChange={(e) => setFilters({...filters, status: e.target.value})}
-                  >
-                    <option value="all">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="verified">Verified</option>
-                    <option value="expired">Expired</option>
-                    <option value="revoked">Revoked</option>
-                  </select>
-                </div>
-                <div className="col-md-4">
-                  <label className="form-label">Verification Method</label>
-                  <select 
-                    className="form-select"
-                    value={filters.verificationMethod}
-                    onChange={(e) => setFilters({...filters, verificationMethod: e.target.value})}
-                  >
-                    <option value="all">All Methods</option>
-                    <option value="dns_txt">DNS TXT Record</option>
-                    <option value="file_upload">File Upload</option>
-                    <option value="email_verification">Email Verification</option>
-                    <option value="manual_approval">Manual Approval</option>
-                  </select>
-                </div>
-                <div className="col-md-4">
-                  <label className="form-label">Search</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Domain, user, notes..."
-                    value={filters.search}
-                    onChange={(e) => setFilters({...filters, search: e.target.value})}
-                  />
-                </div>
-              </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card shadow-sm">
+            <div className="card-body text-center">
+              <h3 className="text-warning mb-1">{stats.pending}</h3>
+              <p className="card-text mb-0 text-muted">Pending Approval</p>
             </div>
           </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card shadow-sm">
+            <div className="card-body text-center">
+              <h3 className="text-success mb-1">{stats.verified}</h3>
+              <p className="card-text mb-0 text-muted">Verified</p>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card shadow-sm">
+            <div className="card-body text-center">
+              <h3 className="text-danger mb-1">{stats.rejected}</h3>
+              <p className="card-text mb-0 text-muted">Expired/Revoked</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-          {/* Error Display */}
-          {error && (
-            <div className="alert alert-danger" role="alert">
-              <i className="bi bi-exclamation-triangle me-2"></i>
-              {error}
+      {/* Filters Card - matching Dashboard.js card style */}
+      <div className="card shadow-sm mb-4">
+        <div className="card-body">
+          <div className="row g-3">
+            <div className="col-md-4">
+              <label className="form-label">Status</label>
+              <select 
+                className="form-select"
+                value={filters.status}
+                onChange={(e) => setFilters({...filters, status: e.target.value})}
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="verified">Verified</option>
+                <option value="expired">Expired</option>
+                <option value="revoked">Revoked</option>
+              </select>
+            </div>
+            <div className="col-md-4">
+              <label className="form-label">Verification Method</label>
+              <select 
+                className="form-select"
+                value={filters.verificationMethod}
+                onChange={(e) => setFilters({...filters, verificationMethod: e.target.value})}
+              >
+                <option value="all">All Methods</option>
+                <option value="dns_txt">DNS TXT Record</option>
+                <option value="file_upload">File Upload</option>
+                <option value="email_verification">Email Verification</option>
+                <option value="manual_approval">Manual Approval</option>
+              </select>
+            </div>
+            <div className="col-md-4">
+              <label className="form-label">Search</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Domain, user, notes..."
+                value={filters.search}
+                onChange={(e) => setFilters({...filters, search: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Authorization Requests Table - matching Dashboard.js card style */}
+      <div className="card shadow-sm">
+        <div className="card-body">
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <h5 className="card-title mb-0">Authorization Requests ({filteredAuthorizations.length})</h5>
+          </div>
+          
+          {filteredAuthorizations.length === 0 ? (
+            <div className="text-center py-5">
+              <i className="bi bi-inbox display-4 text-muted"></i>
+              <p className="text-muted mt-3">No authorization requests found</p>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-hover mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th>Domain</th>
+                    <th>User</th>
+                    <th>Verification Method</th>
+                    <th>Status</th>
+                    <th>Requested</th>
+                    <th>Expires</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAuthorizations.map((auth) => (
+                    <tr key={auth.id}>
+                      <td>
+                        <div className="fw-bold">{auth.domain}</div>
+                        {auth.notes && (
+                          <small className="text-muted">
+                            {auth.notes.substring(0, 50)}...
+                          </small>
+                        )}
+                      </td>
+                      <td>
+                        <div>{auth.user?.username || 'Unknown'}</div>
+                        {auth.user?.email && (
+                          <small className="text-muted">{auth.user.email}</small>
+                        )}
+                      </td>
+                      <td>
+                        <span className="badge bg-secondary">
+                          {auth.verification_method?.replace('_', ' ').toUpperCase() || 'N/A'}
+                        </span>
+                      </td>
+                      <td>
+                        {getStatusBadge(auth)}
+                        {getUrgencyBadge(auth)}
+                      </td>
+                      <td>
+                        <small className="text-muted">
+                          {new Date(auth.created_at || auth.requested_at).toLocaleDateString()}
+                        </small>
+                      </td>
+                      <td>
+                        <small className="text-muted">
+                          {auth.expires_at ? 
+                            new Date(auth.expires_at).toLocaleDateString() : 
+                            'N/A'
+                          }
+                        </small>
+                      </td>
+                      <td>
+                        <div className="btn-group btn-group-sm">
+                          <button
+                            className="btn btn-outline-primary"
+                            onClick={() => handleViewDetails(auth)}
+                          >
+                            <i className="bi bi-eye"></i>
+                          </button>
+                          {auth.status === 'pending' && (
+                            <button
+                              className="btn btn-outline-success"
+                              onClick={() => handleApprove(auth.id)}
+                              disabled={processing}
+                            >
+                              <i className="bi bi-check-lg"></i>
+                            </button>
+                          )}
+                          {auth.status === 'verified' && auth.is_active && (
+                            <button
+                              className="btn btn-outline-danger"
+                              onClick={() => handleRevoke(auth.id)}
+                              disabled={processing}
+                            >
+                              <i className="bi bi-x-lg"></i>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-
-          {/* Authorization Requests Table */}
-          <div className="card">
-            <div className="card-header">
-              <h5 className="mb-0">
-                Authorization Requests ({filteredAuthorizations.length})
-              </h5>
-            </div>
-            <div className="card-body p-0">
-              {filteredAuthorizations.length === 0 ? (
-                <div className="text-center py-5">
-                  <i className="bi bi-inbox display-4 text-muted"></i>
-                  <p className="text-muted mt-3">No authorization requests found</p>
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <table className="table table-hover mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>Domain</th>
-                        <th>User</th>
-                        <th>Verification Method</th>
-                        <th>Status</th>
-                        <th>Requested</th>
-                        <th>Expires</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAuthorizations.map((auth) => (
-                        <tr key={auth.id}>
-                          <td>
-                            <div className="fw-bold">{auth.domain}</div>
-                            {auth.notes && (
-                              <small className="text-muted">
-                                {auth.notes.substring(0, 50)}...
-                              </small>
-                            )}
-                          </td>
-                          <td>
-                            <div>{auth.user?.username || 'Unknown'}</div>
-                            {auth.user?.email && (
-                              <small className="text-muted">{auth.user.email}</small>
-                            )}
-                          </td>
-                          <td>
-                            <span className="badge bg-secondary">
-                              {auth.verification_method?.replace('_', ' ').toUpperCase() || 'N/A'}
-                            </span>
-                          </td>
-                          <td>
-                            {getStatusBadge(auth)}
-                            {getUrgencyBadge(auth)}
-                          </td>
-                          <td>
-                            <small className="text-muted">
-                              {new Date(auth.created_at || auth.requested_at).toLocaleDateString()}
-                            </small>
-                          </td>
-                          <td>
-                            <small className="text-muted">
-                              {auth.expires_at ? 
-                                new Date(auth.expires_at).toLocaleDateString() : 
-                                'N/A'
-                              }
-                            </small>
-                          </td>
-                          <td>
-                            <div className="btn-group btn-group-sm">
-                              <button
-                                className="btn btn-outline-primary"
-                                onClick={() => handleViewDetails(auth)}
-                              >
-                                <i className="bi bi-eye"></i>
-                              </button>
-                              {auth.status === 'pending' && (
-                                <button
-                                  className="btn btn-outline-success"
-                                  onClick={() => handleApprove(auth.id)}
-                                  disabled={processing}
-                                >
-                                  <i className="bi bi-check-lg"></i>
-                                </button>
-                              )}
-                              {auth.status === 'verified' && auth.is_active && (
-                                <button
-                                  className="btn btn-outline-danger"
-                                  onClick={() => handleRevoke(auth.id)}
-                                  disabled={processing}
-                                >
-                                  <i className="bi bi-x-lg"></i>
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
 
