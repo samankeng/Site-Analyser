@@ -19,8 +19,7 @@ const anomalyService = {
       );
       console.log("Get anomalies response:", response); // Debug log
 
-      // Fix for API response format issue:
-      // Ensure we're returning an array even if the API returns an object
+      // ENHANCED: Handle different anomaly data formats
       let anomaliesData = response.data;
 
       // Check if the response is an object with a results or items property containing the anomalies
@@ -29,6 +28,17 @@ const anomalyService = {
           anomaliesData = anomaliesData.results;
         } else if (Array.isArray(anomaliesData.items)) {
           anomaliesData = anomaliesData.items;
+        } else if (Array.isArray(anomaliesData.anomalies)) {
+          // FIXED: Handle backend anomaly format
+          anomaliesData = anomaliesData.anomalies;
+        } else if (anomaliesData.is_anomaly && anomaliesData.anomalies) {
+          // FIXED: Handle enhanced anomaly detection response format
+          anomaliesData = anomaliesData.anomalies;
+          console.log(
+            `Backend detected ${anomaliesData.length} anomalies with score ${
+              anomaliesData.anomaly_score || 0
+            }`
+          );
         } else if (
           Object.keys(anomaliesData).length > 0 &&
           typeof anomaliesData.id === "string"
@@ -42,6 +52,33 @@ const anomalyService = {
           );
           anomaliesData = [];
         }
+      }
+
+      // ENHANCED: Transform backend anomaly format to frontend format
+      if (Array.isArray(anomaliesData)) {
+        anomaliesData = anomaliesData.map((anomaly, index) => {
+          // If it's already in the correct format, keep it
+          if (anomaly.component && anomaly.id) {
+            return anomaly;
+          }
+
+          // Transform backend format to frontend format
+          return {
+            id: anomaly.id || `backend-anomaly-${index}-${Date.now()}`,
+            component: anomalyService.getComponentFromType(
+              anomaly.type || "unknown"
+            ),
+            severity: anomaly.severity || "medium",
+            description: anomaly.description || "No description available",
+            recommendation: anomaly.recommendation || null,
+            score: anomaly.anomaly_score || anomaly.score || 0.5,
+            is_false_positive: false,
+            created_at: anomaly.created_at || new Date().toISOString(),
+            details: anomaly.details || {},
+            type: anomaly.type || "unknown", // Keep original type for debugging
+            affected_items: anomaly.affected_items || 0,
+          };
+        });
       }
 
       // If no anomalies detected from API, try to detect from scan results
@@ -71,7 +108,7 @@ const anomalyService = {
         }
       }
 
-      // ADD SMART PRIORITIZATION HERE (without changing existing logic)
+      // Apply smart prioritization (keeping your existing logic)
       if (anomaliesData && anomaliesData.length > 0) {
         // Smart prioritization algorithm
         const prioritized = anomaliesData.map((anomaly) => {
@@ -89,6 +126,9 @@ const anomalyService = {
             "Website Availability": 9,
             "Security Headers": 8,
             "Environment Security": 8,
+            "Issue Concentration Analysis": 7, // NEW
+            "Issue Volume Analysis": 6, // NEW
+            "Content Security": 6, // NEW
             Performance: 6,
             "CORS Configuration": 5,
             "Security Monitoring": 4,
@@ -142,6 +182,27 @@ const anomalyService = {
           "Unknown error",
       };
     }
+  },
+
+  getComponentFromType: (type) => {
+    const typeToComponentMap = {
+      missing_security_headers: "Security Headers",
+      critical_security_headers_missing: "Critical Security Headers",
+      ssl_configuration_issues: "SSL/TLS Configuration",
+      medium_severity_concentration: "Issue Concentration Analysis",
+      high_severity_concentration: "High Severity Issues",
+      excessive_issue_count: "Issue Volume Analysis",
+      vulnerability_cluster: "Vulnerability Clustering",
+      critical_vulnerability_cluster: "Critical Vulnerabilities",
+      performance_degradation: "Performance Analysis",
+      connection_timeouts: "Connection Issues",
+      ssl_test_site_patterns: "SSL Test Site Detection",
+      content_security_issues: "Content Security",
+      scan_failure_anomalies: "Scan Quality",
+      unknown: "General Analysis",
+    };
+
+    return typeToComponentMap[type] || "General Analysis";
   },
 
   // New method to get scan results for anomaly detection
