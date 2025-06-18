@@ -1,4 +1,4 @@
-// src/components/dashboard/AnomalyDetectionDashboard.js
+// src/components/dashboard/AnomalyDetectionDashboard.js - FIXED VERSION
 import { useEffect, useState } from "react";
 import anomalyService from "../../services/anomalyService";
 
@@ -30,9 +30,8 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
         console.log("Anomaly service response:", response);
 
         if (response.success) {
-          const anomaliesData = Array.isArray(response.data)
-            ? response.data
-            : [];
+          // FIXED: Transform backend anomaly data to frontend format
+          const anomaliesData = transformAnomalyData(response.data);
           setAnomalies(anomaliesData);
 
           // Calculate and set stats
@@ -74,12 +73,64 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
     };
 
     fetchAnomalies();
-  }, [scanId]); // Remove retryCount from dependencies to prevent infinite loops
+  }, [scanId]);
 
   // Reset retry count when scanId changes
   useEffect(() => {
     setRetryCount(0);
   }, [scanId]);
+
+  // FIXED: Transform backend anomaly data to match frontend expectations
+  const transformAnomalyData = (backendData) => {
+    if (!backendData) return [];
+
+    // Handle different response formats
+    let anomaliesArray = [];
+
+    if (Array.isArray(backendData)) {
+      anomaliesArray = backendData;
+    } else if (backendData.anomalies && Array.isArray(backendData.anomalies)) {
+      anomaliesArray = backendData.anomalies;
+    } else if (backendData.results && Array.isArray(backendData.results)) {
+      anomaliesArray = backendData.results;
+    }
+
+    // Transform each anomaly to frontend format
+    return anomaliesArray.map((anomaly, index) => ({
+      id: anomaly.id || `anomaly-${index}`,
+      component: getComponentDisplayName(anomaly.type || "Unknown"),
+      severity: anomaly.severity || "medium",
+      description: anomaly.description || "No description available",
+      recommendation: anomaly.recommendation || null,
+      score: anomaly.anomaly_score || backendData.anomaly_score || 0,
+      details: anomaly.details || {},
+      created_at: anomaly.created_at || new Date().toISOString(),
+      is_false_positive: false,
+      type: anomaly.type || "unknown",
+    }));
+  };
+
+  // FIXED: Map anomaly types to user-friendly component names
+  const getComponentDisplayName = (type) => {
+    const componentMap = {
+      missing_security_headers: "Security Headers",
+      critical_security_headers_missing: "Critical Security Headers",
+      ssl_configuration_issues: "SSL/TLS Configuration",
+      medium_severity_concentration: "Issue Concentration Analysis",
+      high_severity_concentration: "High Severity Issues",
+      excessive_issue_count: "Issue Volume Analysis",
+      vulnerability_cluster: "Vulnerability Clustering",
+      critical_vulnerability_cluster: "Critical Vulnerabilities",
+      performance_degradation: "Performance Analysis",
+      connection_timeouts: "Connection Issues",
+      ssl_test_site_patterns: "SSL Test Site Detection",
+      content_security_issues: "Content Security",
+      scan_failure_anomalies: "Scan Quality",
+      unknown: "General Analysis",
+    };
+
+    return componentMap[type] || componentMap["unknown"];
+  };
 
   const calculateAnomalyStats = (anomaliesData) => {
     const stats = {
@@ -105,7 +156,14 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
       stats.byComponent[component] = (stats.byComponent[component] || 0) + 1;
     });
 
-    stats.overallScore = anomalyService.calculateAnomalyScore(anomaliesData);
+    // FIXED: Calculate overall score properly
+    if (anomaliesData.length > 0) {
+      const avgScore =
+        anomaliesData.reduce((sum, anomaly) => sum + (anomaly.score || 0), 0) /
+        anomaliesData.length;
+      stats.overallScore = Math.round(avgScore * 100);
+    }
+
     return stats;
   };
 
@@ -296,7 +354,7 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
   );
 };
 
-// Separate component for individual anomaly cards
+// ENHANCED: Separate component for individual anomaly cards
 const AnomalyCard = ({ anomaly, onMarkFalsePositive }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -348,8 +406,18 @@ const AnomalyCard = ({ anomaly, onMarkFalsePositive }) => {
           </div>
         )}
 
+        {/* ENHANCED: Show anomaly type for debugging */}
+        {anomaly.type && (
+          <div className="mb-2">
+            <small className="text-muted">
+              <i className="fas fa-tag me-1"></i>
+              Type: <code>{anomaly.type}</code>
+            </small>
+          </div>
+        )}
+
         {/* Additional Details */}
-        {anomaly.details && (
+        {anomaly.details && Object.keys(anomaly.details).length > 0 && (
           <div className="mt-2">
             <button
               className="btn btn-sm btn-outline-secondary"
@@ -367,7 +435,9 @@ const AnomalyCard = ({ anomaly, onMarkFalsePositive }) => {
                   {Object.entries(anomaly.details).map(([key, value]) => (
                     <div key={key} className="mb-1">
                       <strong>{key.replace(/_/g, " ").toUpperCase()}:</strong>{" "}
-                      {Array.isArray(value) ? value.join(", ") : String(value)}
+                      {typeof value === "object"
+                        ? JSON.stringify(value, null, 2)
+                        : String(value)}
                     </div>
                   ))}
                 </small>
