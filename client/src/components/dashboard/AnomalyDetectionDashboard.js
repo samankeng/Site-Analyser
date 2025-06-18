@@ -199,7 +199,7 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
       <div className="anomaly-dashboard p-3">
         <h5 className="d-flex align-items-center">
           <i className="fas fa-exclamation-triangle text-warning me-2"></i>
-          Anomaly Detection
+          Anomaly Detection For Latest Scan
         </h5>
         <p className="text-muted">Select a scan to view anomaly analysis.</p>
       </div>
@@ -211,7 +211,7 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
       <div className="anomaly-dashboard p-3">
         <h5 className="d-flex align-items-center">
           <i className="fas fa-brain text-primary me-2"></i>
-          Anomaly Detection
+          Anomaly Detection For Latest Scan
         </h5>
         <div className="d-flex align-items-center justify-content-center my-4">
           <div className="spinner-border text-primary me-3" role="status">
@@ -232,7 +232,7 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
       <div className="anomaly-dashboard p-3">
         <h5 className="d-flex align-items-center">
           <i className="fas fa-brain text-primary me-2"></i>
-          Anomaly Detection
+          Anomaly Detection For Latest Scan
         </h5>
         <div
           className="alert alert-danger d-flex align-items-center"
@@ -259,7 +259,7 @@ const AnomalyDetectionDashboard = ({ scanId }) => {
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h5 className="d-flex align-items-center mb-0">
           <i className="fas fa-brain text-primary me-2"></i>
-          Anomaly Detection
+          Anomaly Detection For Latest Scan
           {anomalies.length > 0 && (
             <span className="badge bg-warning text-dark ms-2">
               {anomalies.length} detected

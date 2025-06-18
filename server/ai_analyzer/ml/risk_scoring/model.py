@@ -146,30 +146,7 @@ class RiskScoringModel:
             'overall_severity': self._get_severity_from_score(overall_score)
         }
     
-    # def _calculate_category_score(self, category, findings, severity_counts):
-    #     """Calculate score for a single category"""
-    #     if not findings:
-    #         logger.debug(f"No findings for category {category}, assigning perfect score")
-    #         return 100  # Perfect score if no findings
-        
-    #     # Start with perfect score
-    #     score = 100
-        
-    #     # Process each finding
-    #     for finding in findings:
-    #         severity = finding.get('severity', 'info').lower()
-            
-    #         # Update severity count
-    #         if severity in severity_counts:
-    #             severity_counts[severity] += 1
-            
-    #         # Apply deduction based on severity
-    #         deduction = self.weights["severity_deductions"].get(severity, 0)
-    #         score -= deduction
-        
-    #     # Ensure score is between 0 and 100
-    #     return max(0, min(100, score))
-
+   
     def _calculate_category_score(self, category, findings, severity_counts):
         """Calculate score for a single category with per-severity deduction caps"""
         if not findings:
