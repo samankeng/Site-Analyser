@@ -679,13 +679,18 @@ class AIAnalysisService:
             
             logger.info(f"Enhanced anomaly detection completed: {anomaly_results}")
             
-            # Create recommendations from enhanced anomaly detection
+            # FIXED: Create recommendations from enhanced anomaly detection with proper component names
             if anomaly_results.get('anomalies'):
                 for anomaly in anomaly_results['anomalies']:
                     try:
+                        # FIXED: Get proper component name from anomaly type
+                        component_name = self._get_component_name_from_type(
+                            anomaly.get('type', anomaly.get('component', 'unknown'))
+                        )
+                        
                         AIRecommendation.objects.create(
                             analysis=analysis,
-                            title=f"Enhanced Anomaly: {anomaly.get('component', 'Unknown Component')}",
+                            title=f"Enhanced Anomaly: {component_name}",  # FIXED: Use mapped component name
                             description=anomaly.get('description', 'Anomaly detected'),
                             severity=anomaly.get('severity', 'medium'),
                             recommendation=anomaly.get('recommendation', 'Review and address this anomaly'),
@@ -693,13 +698,14 @@ class AIAnalysisService:
                             confidence_score=anomaly.get('score', 0.5),
                             metadata={
                                 'anomaly_id': anomaly.get('id', ''),
-                                'component': anomaly.get('component', ''),
+                                'component': component_name,  # FIXED: Store mapped component name
+                                'original_type': anomaly.get('type', ''),  # Keep original type for debugging
                                 'details': anomaly.get('details', {}),
                                 'is_false_positive': anomaly.get('is_false_positive', False),
                                 'detection_method': 'enhanced_connection_detection'
                             }
                         )
-                        logger.info(f"Created enhanced anomaly recommendation: {anomaly.get('component')}")
+                        logger.info(f"Created enhanced anomaly recommendation: {component_name}")
                     except Exception as e:
                         logger.error(f"Error creating enhanced anomaly recommendation: {str(e)}")
             
@@ -727,6 +733,27 @@ class AIAnalysisService:
                 'error': str(e),
                 'detection_method': 'error_fallback'
             }
+
+    def _get_component_name_from_type(self, anomaly_type):
+        """Convert anomaly type to user-friendly component name - ADD THIS METHOD"""
+        type_to_component_map = {
+            'missing_security_headers': 'Security Headers',
+            'critical_security_headers_missing': 'Critical Security Headers',
+            'ssl_configuration_issues': 'SSL/TLS Configuration',
+            'medium_severity_concentration': 'Issue Concentration Analysis',
+            'high_severity_concentration': 'High Severity Issues',
+            'excessive_issue_count': 'Issue Volume Analysis',
+            'vulnerability_cluster': 'Vulnerability Clustering',
+            'critical_vulnerability_cluster': 'Critical Vulnerabilities',
+            'performance_degradation': 'Performance Analysis',
+            'connection_timeouts': 'Connection Issues',
+            'ssl_test_site_patterns': 'SSL Test Site Detection',
+            'content_security_issues': 'Content Security',
+            'scan_failure_anomalies': 'Scan Quality',
+            'unknown': 'General Analysis'
+        }
+        
+        return type_to_component_map.get(anomaly_type, 'General Analysis')
 
     def _run_enhanced_connection_anomaly_detection(self, scan_results_list):
         """
