@@ -13,6 +13,7 @@ from scanner.models import ScanResult
 from integrations.shodan_service import ShodanService
 from ai_analyzer.services.threat_intelligence import ThreatIntelligence
 from django.utils import timezone
+from .specific_recommendations import SpecificRecommendationGenerator
 
 # Set up more detailed logging
 logger = logging.getLogger(__name__)
@@ -379,6 +380,7 @@ class AIAnalysisService:
         
         # Initialize enhanced AI agent
         self.enhanced_agent = EnhancedAIAgent()
+        self.recommendation_generator = SpecificRecommendationGenerator()
     
     def analyze(self):
         """Run all AI analyses on the scan results with detailed logging"""
@@ -476,15 +478,17 @@ class AIAnalysisService:
             }
     
     def _run_enhanced_ai_analysis(self, scan_results, analysis):
-        """Enhanced AI analysis that provides direct actionable recommendations"""
+        """Enhanced AI analysis with OpenAI-powered specific recommendations"""
         try:
-            logger.info("Getting AI-powered recommendations for scan results")
+            logger.info("🤖 === STARTING ENHANCED AI ANALYSIS ===")
             logger.info(f"Input scan_results type: {type(scan_results)}")
             logger.info(f"Input scan_results count: {scan_results.count() if hasattr(scan_results, 'count') else len(scan_results)}")
             
             # Convert to list and log sample
             scan_results_list = list(scan_results)
-            logger.info(f"First 3 scan results for AI analysis:")
+            logger.info(f"📊 Processing {len(scan_results_list)} scan results for AI analysis")
+            
+            # Log first 3 results for debugging
             for i, result in enumerate(scan_results_list[:3]):
                 logger.info(f"  Result {i+1}:")
                 logger.info(f"    ID: {result.id}")
@@ -497,71 +501,215 @@ class AIAnalysisService:
 
             # Use the pre-calculated security score
             scanner_score = self.security_score
-            logger.info(f"Using pre-calculated security score for AI: {scanner_score}/100")
+            logger.info(f"🎯 Using pre-calculated security score: {scanner_score}/100")
             
             # LOG TARGET INFO
-            logger.info(f"Target URL: {self.scan.target_url}")
-            logger.info(f"Scan ID: {self.scan.id}")
+            logger.info(f"🌐 Target URL: {self.scan.target_url}")
+            logger.info(f"🆔 Scan ID: {self.scan.id}")
             
-            # Get AI-powered recommendations WITH THE SCANNER SCORE
-            logger.info("Calling enhanced AI agent...")
-            ai_recommendations = self.enhanced_agent.analyze_scan_results_with_ai(
-                scan_results, 
-                self.scan.target_url,
-                scanner_score  # Pass the pre-calculated score
-            )
+            # === PHASE 1: OPENAI SPECIFIC RECOMMENDATIONS ===
+            logger.info("🎯 === PHASE 1: GENERATING OPENAI SPECIFIC RECOMMENDATIONS ===")
             
-            # LOG AI RESPONSE
-            logger.info("=== AI AGENT RESPONSE ===")
-            logger.info(f"AI recommendations keys: {ai_recommendations.keys()}")
-            logger.info(f"Security score from AI: {ai_recommendations.get('security_score', 'NOT SET')}")
-            logger.info(f"Risk level: {ai_recommendations.get('overall_risk_level', 'NOT SET')}")
-            logger.info(f"Number of recommendations: {len(ai_recommendations.get('recommendations', []))}")
+            openai_recommendations = []
+            openai_success = False
             
-            # Log first recommendation sample
-            if ai_recommendations.get('recommendations'):
-                first_rec = ai_recommendations['recommendations'][0]
-                logger.info(f"Sample recommendation:")
-                logger.info(f"  Issue: {first_rec.get('issue_name', 'N/A')}")
-                logger.info(f"  Severity: {first_rec.get('severity', 'N/A')}")
-                logger.info(f"  Steps: {len(first_rec.get('remediation_steps', []))} steps")
-                # Ensure the AI uses the scanner score
-            ai_recommendations['security_score'] = scanner_score
+            try:
+                # Generate OpenAI-powered specific recommendations
+                if hasattr(self, 'specific_rec_generator'):
+                    logger.info("🤖 Generating OpenAI-powered specific recommendations...")
+                    
+                    openai_recs = self.specific_rec_generator.generate_recommendations_for_scan(
+                        scan_results_list, self.scan.target_url
+                    )
+                    
+                    logger.info(f"✅ Generated {len(openai_recs)} OpenAI specific recommendations")
+                    
+                    # Save OpenAI recommendations to database
+                    openai_saved_count = 0
+                    for rec_data in openai_recs:
+                        try:
+                            # Format the recommendation for display
+                            formatted_description = self.specific_rec_generator.format_recommendation_for_display(rec_data)
+                            
+                            # Create the recommendation record
+                            openai_recommendation = AIRecommendation.objects.create(
+                                analysis=analysis,
+                                title=rec_data['title'],
+                                description=formatted_description,
+                                severity=rec_data.get('severity', 'medium'),
+                                confidence_score=rec_data.get('confidence', 90) / 100,
+                                recommendation_type='openai_specific',
+                                metadata={
+                                    'openai_data': rec_data,
+                                    'category': rec_data.get('category'),
+                                    'issues_count': rec_data.get('issues_count'),
+                                    'estimated_fix_time': rec_data.get('estimated_fix_time'),
+                                    'priority': rec_data.get('priority'),
+                                    'security_score': scanner_score,
+                                    'model_used': rec_data.get('model_used', 'gpt-4o')
+                                }
+                            )
+                            
+                            openai_recommendations.append(openai_recommendation)
+                            openai_saved_count += 1
+                            logger.info(f"💾 Saved OpenAI recommendation: {openai_recommendation.title}")
+                            
+                        except Exception as e:
+                            logger.error(f"❌ Error saving OpenAI recommendation: {str(e)}")
+                            continue
+                    
+                    logger.info(f"✅ Saved {openai_saved_count} OpenAI specific recommendations")
+                    openai_success = True
+                    
+                else:
+                    logger.warning("⚠️ OpenAI specific recommendation generator not available")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error in OpenAI specific recommendations: {str(e)}")
+                logger.error(f"🔍 Traceback: {traceback.format_exc()}")
             
-            # Store enhanced recommendations in database
-            if 'recommendations' in ai_recommendations:
-                recs_created = 0
-                for rec in ai_recommendations['recommendations']:
-                    try:
-                        # Create recommendation record
-                        AIRecommendation.objects.create(
-                            analysis=analysis,
-                            title=rec.get('issue_name', 'AI Generated Recommendation'),
-                            description=rec.get('risk_assessment', rec.get('description', '')),
-                            severity=rec.get('severity', 'medium'),
-                            recommendation=json.dumps(rec.get('remediation_steps', [])),
-                            recommendation_type='ai_enhanced',
-                            confidence_score=0.9,
-                            metadata={
-                                'business_impact': rec.get('business_impact', ''),
-                                'technical_details': rec.get('technical_details', ''),
-                                'priority': rec.get('priority', 'medium'),
-                                'estimated_effort': rec.get('estimated_effort', 'unknown'),
-                                'category': rec.get('category', 'general'),
-                                'security_score': scanner_score  # Store score in metadata
-                            }
-                        )
-                        recs_created += 1
-                    except Exception as e:
-                        logger.error(f"Error creating AI recommendation: {str(e)}")
+            # === PHASE 2: ENHANCED AI AGENT ANALYSIS ===
+            logger.info("🧠 === PHASE 2: ENHANCED AI AGENT ANALYSIS ===")
+            
+            ai_recommendations = {}
+            enhanced_ai_success = False
+            
+            try:
+                # Get AI-powered recommendations from enhanced agent
+                logger.info("🤖 Calling enhanced AI agent...")
                 
-                logger.info(f"Created {recs_created} enhanced AI recommendations")
+                if hasattr(self, 'enhanced_agent'):
+                    ai_recommendations = self.enhanced_agent.analyze_scan_results_with_ai(
+                        scan_results_list, 
+                        self.scan.target_url,
+                        scanner_score  # Pass the pre-calculated score
+                    )
+                    
+                    # LOG AI AGENT RESPONSE
+                    logger.info("=== AI AGENT RESPONSE ===")
+                    logger.info(f"AI recommendations keys: {ai_recommendations.keys()}")
+                    logger.info(f"Security score from AI: {ai_recommendations.get('security_score', 'NOT SET')}")
+                    logger.info(f"Risk level: {ai_recommendations.get('overall_risk_level', 'NOT SET')}")
+                    logger.info(f"Number of recommendations: {len(ai_recommendations.get('recommendations', []))}")
+                    
+                    # Log first recommendation sample
+                    if ai_recommendations.get('recommendations'):
+                        first_rec = ai_recommendations['recommendations'][0]
+                        logger.info(f"Sample AI agent recommendation:")
+                        logger.info(f"  Issue: {first_rec.get('issue_name', 'N/A')}")
+                        logger.info(f"  Severity: {first_rec.get('severity', 'N/A')}")
+                        logger.info(f"  Steps: {len(first_rec.get('remediation_steps', []))} steps")
+                    
+                    # Ensure the AI uses the scanner score
+                    ai_recommendations['security_score'] = scanner_score
+                    
+                    # Store enhanced AI agent recommendations in database
+                    if 'recommendations' in ai_recommendations:
+                        ai_recs_created = 0
+                        for rec in ai_recommendations['recommendations']:
+                            try:
+                                # Create recommendation record
+                                AIRecommendation.objects.create(
+                                    analysis=analysis,
+                                    title=rec.get('issue_name', 'AI Enhanced Recommendation'),
+                                    description=rec.get('risk_assessment', rec.get('description', '')),
+                                    severity=rec.get('severity', 'medium'),
+                                    recommendation=json.dumps(rec.get('remediation_steps', [])),
+                                    recommendation_type='ai_enhanced',
+                                    confidence_score=0.9,
+                                    metadata={
+                                        'business_impact': rec.get('business_impact', ''),
+                                        'technical_details': rec.get('technical_details', ''),
+                                        'priority': rec.get('priority', 'medium'),
+                                        'estimated_effort': rec.get('estimated_effort', 'unknown'),
+                                        'category': rec.get('category', 'general'),
+                                        'security_score': scanner_score,
+                                        'ai_agent_analysis': True
+                                    }
+                                )
+                                ai_recs_created += 1
+                            except Exception as e:
+                                logger.error(f"❌ Error creating AI agent recommendation: {str(e)}")
+                        
+                        logger.info(f"✅ Created {ai_recs_created} enhanced AI agent recommendations")
+                        enhanced_ai_success = True
+                    
+                else:
+                    logger.warning("⚠️ Enhanced AI agent not available")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error in enhanced AI agent analysis: {str(e)}")
+                logger.error(f"🔍 Traceback: {traceback.format_exc()}")
             
-            return ai_recommendations
+            # === PHASE 3: COMBINE AND SUMMARIZE RESULTS ===
+            logger.info("📊 === PHASE 3: COMBINING RESULTS ===")
+            
+            # Count total recommendations created
+            total_openai_recs = len(openai_recommendations)
+            total_ai_agent_recs = len(ai_recommendations.get('recommendations', []))
+            total_recommendations = total_openai_recs + total_ai_agent_recs
+            
+            logger.info(f"📈 ANALYSIS SUMMARY:")
+            logger.info(f"  OpenAI Specific Recommendations: {total_openai_recs}")
+            logger.info(f"  AI Agent Recommendations: {total_ai_agent_recs}")
+            logger.info(f"  Total Recommendations: {total_recommendations}")
+            logger.info(f"  Security Score: {scanner_score}/100")
+            
+            # Create comprehensive result
+            enhanced_analysis_result = {
+                'status': 'success',
+                'security_score': scanner_score,
+                'overall_risk_level': ai_recommendations.get('overall_risk_level', 'medium'),
+                
+                # OpenAI Specific Recommendations
+                'openai_recommendations': {
+                    'success': openai_success,
+                    'count': total_openai_recs,
+                    'method': 'openai_gpt4_specific'
+                },
+                
+                # Enhanced AI Agent
+                'enhanced_ai_agent': {
+                    'success': enhanced_ai_success,
+                    'count': total_ai_agent_recs,
+                    'method': 'enhanced_ai_agent'
+                },
+                
+                # Combined results
+                'total_recommendations': total_recommendations,
+                'recommendations_breakdown': {
+                    'openai_specific': total_openai_recs,
+                    'ai_enhanced': total_ai_agent_recs
+                },
+                
+                # Analysis metadata
+                'scan_results_analyzed': len(scan_results_list),
+                'target_url': self.scan.target_url,
+                'analysis_timestamp': timezone.now().isoformat()
+            }
+            
+            # Include original AI recommendations for compatibility
+            if ai_recommendations:
+                enhanced_analysis_result.update(ai_recommendations)
+            
+            logger.info("🎉 === ENHANCED AI ANALYSIS COMPLETED SUCCESSFULLY ===")
+            logger.info(f"✅ Total processing time: {time.time() - self.start_time:.2f} seconds")
+            
+            return enhanced_analysis_result
             
         except Exception as e:
-            logger.exception(f"Error in enhanced AI analysis: {str(e)}")
-            return {"error": str(e), "recommendations": [], "security_score": self.security_score}
+            logger.exception(f"💥 CRITICAL ERROR in enhanced AI analysis: {str(e)}")
+            logger.error(f"🔍 Full traceback: {traceback.format_exc()}")
+            
+            return {
+                "status": "error",
+                "error": str(e), 
+                "recommendations": [], 
+                "security_score": self.security_score,
+                "openai_recommendations": {"success": False, "count": 0},
+                "enhanced_ai_agent": {"success": False, "count": 0},
+                "total_recommendations": 0
+            }
     
     
     def _run_other_analyses(self, scan_results, analysis):
