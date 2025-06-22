@@ -6,6 +6,7 @@ import pickle
 import os
 from django.conf import settings
 from pathlib import Path
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -47,37 +48,296 @@ class ThreatDetectionModel:
             logger.error(f"Error initializing threat detection model: {str(e)}")
             # Fall back to rule-based approach
             self.model = None
+    def train_model(self, training_data):
+        """Train the threat detection model with labeled data"""
+        try:
+            import numpy as np
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import classification_report, accuracy_score
+            from sklearn.preprocessing import StandardScaler
+            
+            logger.info("🚀 Starting threat detection model training...")
+            
+            # Validate input data
+            if not training_data or 'features' not in training_data or 'labels' not in training_data:
+                logger.error("Invalid training data format")
+                return False
+            
+            # Extract features and labels
+            features = np.array(training_data['features'])
+            labels = np.array(training_data['labels'])
+            
+            logger.info(f"📊 Training data shape: {features.shape}")
+            logger.info(f"📊 Labels shape: {labels.shape}")
+            logger.info(f"📊 Positive samples: {np.sum(labels)}, Negative samples: {len(labels) - np.sum(labels)}")
+            
+            # Validate data quality
+            if len(features) < 20:
+                logger.error("Need at least 20 training samples")
+                return False
+            
+            if np.sum(labels) < 5:
+                logger.warning("Very few positive examples - model may not train well")
+            
+            # Split data for training and validation
+            if len(features) > 50:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    features, labels, test_size=0.2, random_state=42, 
+                    stratify=labels if len(np.unique(labels)) > 1 else None
+                )
+            else:
+                # For small datasets, use all data for training
+                X_train, X_test, y_train, y_test = features, features, labels, labels
+                logger.info("Small dataset - using all data for training and testing")
+            
+            # Scale features
+            self.scaler = StandardScaler()
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_test_scaled = self.scaler.transform(X_test)
+            
+            # Train Random Forest model (good for cybersecurity)
+            self.model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                class_weight='balanced',  # Handle imbalanced data
+                min_samples_split=5,
+                min_samples_leaf=2
+            )
+            
+            logger.info("🤖 Training Random Forest model...")
+            self.model.fit(X_train_scaled, y_train)
+            
+            # Evaluate model
+            y_pred = self.model.predict(X_test_scaled)
+            y_pred_proba = self.model.predict_proba(X_test_scaled)
+            
+            accuracy = accuracy_score(y_test, y_pred)
+            
+            logger.info(f"✅ Model training completed!")
+            logger.info(f"📈 Accuracy: {accuracy:.3f}")
+            
+            # Log feature importance
+            if hasattr(self.model, 'feature_importances_'):
+                feature_importance = list(zip(self.feature_names, self.model.feature_importances_))
+                feature_importance.sort(key=lambda x: x[1], reverse=True)
+                logger.info("🔍 Feature importance:")
+                for feature, importance in feature_importance[:5]:
+                    logger.info(f"   {feature}: {importance:.3f}")
+            
+            try:
+                logger.info(f"📋 Classification report:\n{classification_report(y_test, y_pred)}")
+            except:
+                logger.info("Could not generate classification report")
+            
+            # Update feature names to match training data
+            if 'feature_names' in training_data:
+                self.feature_names = training_data['feature_names']
+            
+            # Save the trained model
+            success = self.save_model()
+            if success:
+                logger.info("💾 Model saved successfully!")
+                return True
+            else:
+                logger.error("❌ Failed to save trained model")
+                return False
+                
+        except Exception as e:
+            logger.exception(f"❌ Error training threat detection model: {str(e)}")
+            return False
     
     def load_model(self):
         """Load a trained model from disk"""
         try:
+            import pickle
             with open(self.model_path, 'rb') as f:
                 model_data = pickle.load(f)
-                self.model = model_data.get('model')
-                self.feature_names = model_data.get('feature_names', [])
+                
+            self.model = model_data.get('model')
+            self.scaler = model_data.get('scaler')
+            self.feature_names = model_data.get('feature_names', self.feature_names)
+            
+            logger.info(f"✅ Loaded threat detection model from {self.model_path}")
+            logger.info(f"📋 Model type: {model_data.get('model_type', 'unknown')}")
+            logger.info(f"🕐 Trained at: {model_data.get('trained_at', 'unknown')}")
+            
         except Exception as e:
-            logger.error(f"Error loading threat detection model: {str(e)}")
+            logger.error(f"❌ Error loading threat detection model: {str(e)}")
             self.model = None
     
     def save_model(self):
-        """Save the current model to disk"""
-        if self.model is not None:
-            try:
-                # Ensure directory exists
-                os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
-                
-                # Save model and feature names
-                with open(self.model_path, 'wb') as f:
-                    pickle.dump({
-                        'model': self.model,
-                        'feature_names': self.feature_names
-                    }, f)
-                logger.info("Saved threat detection model to disk")
-                return True
-            except Exception as e:
-                logger.error(f"Error saving threat detection model: {str(e)}")
+        """Save the model, scaler, and metadata to disk"""
+        try:
+            if self.model is None:
+                logger.warning("No model to save")
                 return False
-        return False
+            
+            # Ensure directory exists
+            import os
+            os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
+            
+            # Save model, scaler, and metadata
+            model_data = {
+                'model': self.model,
+                'scaler': getattr(self, 'scaler', None),
+                'feature_names': self.feature_names,
+                'model_type': 'RandomForestClassifier',
+                'trained_at': str(timezone.now()) if 'timezone' in globals() else 'unknown'
+            }
+            
+            import pickle
+            with open(self.model_path, 'wb') as f:
+                pickle.dump(model_data, f)
+            
+            logger.info(f"💾 Threat detection model saved to {self.model_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error saving model: {str(e)}")
+            return False
+    
+    def _extract_features_for_training(self, scan_result):
+        """Extract features from a single scan result for training"""
+        try:
+            features = []
+            
+            # Get attributes safely
+            details = getattr(scan_result, 'details', {}) or {}
+            category = getattr(scan_result, 'category', '')
+            severity = getattr(scan_result, 'severity', 'info')
+            name = getattr(scan_result, 'name', '')
+            description = getattr(scan_result, 'description', '')
+            
+            # Combine text for analysis
+            text_content = (name + ' ' + description).lower()
+            
+            # Feature 1: Missing security headers indicator (0-3)
+            if category == 'headers':
+                header_score = 0
+                critical_headers = ['content-security-policy', 'x-frame-options', 'strict-transport-security']
+                for header in critical_headers:
+                    if header in text_content:
+                        header_score += 1
+                features.append(header_score)
+            else:
+                features.append(0)
+            
+            # Feature 2: SSL/TLS security issues (0-5)
+            if category == 'ssl':
+                ssl_score = 0
+                if any(keyword in text_content for keyword in ['expired', 'invalid']):
+                    ssl_score += 3
+                if any(keyword in text_content for keyword in ['weak', 'rc4', 'md5']):
+                    ssl_score += 2
+                if 'self-signed' in text_content:
+                    ssl_score += 2
+                if any(keyword in text_content for keyword in ['tls', 'ssl']) and severity in ['high', 'critical']:
+                    ssl_score += 1
+                features.append(min(ssl_score, 5))
+            else:
+                features.append(0)
+            
+            # Feature 3: Severity level (0-4)
+            severity_map = {'info': 0, 'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
+            features.append(severity_map.get(severity.lower() if severity else 'info', 0))
+            
+            # Feature 4: Vulnerability indicators (0-4)
+            vuln_score = 0
+            vuln_keywords = ['xss', 'injection', 'csrf', 'clickjacking', 'vulnerability']
+            for keyword in vuln_keywords:
+                if keyword in text_content:
+                    vuln_score += 1
+            features.append(min(vuln_score, 4))
+            
+            # Feature 5: Content/configuration issues (0-3)
+            config_score = 0
+            if category in ['content', 'configuration']:
+                config_score += 1
+            if any(keyword in text_content for keyword in ['sensitive', 'exposed', 'misconfigured']):
+                config_score += 1
+            if 'error' in text_content and severity in ['medium', 'high', 'critical']:
+                config_score += 1
+            features.append(min(config_score, 3))
+            
+            # Ensure we have exactly the expected number of features
+            expected_features = len(self.feature_names)
+            while len(features) < expected_features:
+                features.append(0)
+            
+            return features[:expected_features]
+            
+        except Exception as e:
+            logger.error(f"❌ Error extracting features from scan result {getattr(scan_result, 'id', 'unknown')}: {str(e)}")
+            return [0] * len(self.feature_names)
+    def _generate_ml_threat_descriptions(self, threat_score, features, scan_data):
+        """Generate threat descriptions based on ML model prediction"""
+        threats = []
+        
+        try:
+            # High-confidence threats
+            if threat_score > 0.7:
+                # Analyze which features contributed most to the threat score
+                feature_analysis = {}
+                for i, (feature_name, feature_value) in enumerate(zip(self.feature_names, features)):
+                    if feature_value > 0:
+                        feature_analysis[feature_name] = feature_value
+                
+                # Generate threats based on feature analysis
+                if feature_analysis.get('missing_security_headers', 0) > 0:
+                    threats.append({
+                        'type': 'ml_security_headers',
+                        'name': 'ML-Detected Security Header Issues',
+                        'description': f'Machine learning model detected security header vulnerabilities (confidence: {threat_score:.2%})',
+                        'severity': 'high' if threat_score > 0.8 else 'medium',
+                        'confidence': threat_score,
+                        'ml_features': feature_analysis
+                    })
+                
+                if feature_analysis.get('insecure_configuration', 0) > 2:
+                    threats.append({
+                        'type': 'ml_configuration',
+                        'name': 'ML-Detected Configuration Issues',
+                        'description': f'Advanced pattern analysis indicates configuration vulnerabilities (confidence: {threat_score:.2%})',
+                        'severity': 'high' if threat_score > 0.85 else 'medium',
+                        'confidence': threat_score,
+                        'ml_features': feature_analysis
+                    })
+                
+                if not threats:  # Generic ML threat if no specific patterns
+                    threats.append({
+                        'type': 'ml_general_threat',
+                        'name': 'ML-Detected Security Risk',
+                        'description': f'Machine learning analysis indicates potential security threats (confidence: {threat_score:.2%})',
+                        'severity': 'high' if threat_score > 0.8 else 'medium',
+                        'confidence': threat_score,
+                        'recommendation': 'Review scan results and implement recommended security measures',
+                        'ml_features': feature_analysis
+                    })
+            
+            # Medium-confidence threats
+            elif threat_score > 0.4:
+                threats.append({
+                    'type': 'ml_potential_risk',
+                    'name': 'ML-Detected Potential Risk',
+                    'description': f'Machine learning model indicates moderate security concerns (confidence: {threat_score:.2%})',
+                    'severity': 'medium',
+                    'confidence': threat_score,
+                    'recommendation': 'Monitor and consider additional security measures'
+                })
+            
+            return threats
+            
+        except Exception as e:
+            logger.error(f"Error generating ML threat descriptions: {str(e)}")
+            return [{
+                'type': 'ml_error',
+                'name': 'ML Analysis Error',
+                'description': 'Error occurred during machine learning threat analysis',
+                'severity': 'info',
+                'confidence': 0.0
+            }]
     
     def detect_threats(self, scan_data):
         """
@@ -91,9 +351,11 @@ class ThreatDetectionModel:
         """
         # If we have a trained model, use it
         if self.model is not None:
+            print("🤖 Using TRAINED ML MODEL for threat detection")
             return self._detect_with_model(scan_data)
         
         # Otherwise use rule-based detection
+        print("📋 Using RULE-BASED detection (current state)")
         return self._detect_with_rules(scan_data)
     
     def _detect_with_model(self, scan_data):

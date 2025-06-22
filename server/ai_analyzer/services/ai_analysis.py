@@ -479,20 +479,53 @@ class AIAnalysisService:
         """Enhanced AI analysis that provides direct actionable recommendations"""
         try:
             logger.info("Getting AI-powered recommendations for scan results")
+            logger.info(f"Input scan_results type: {type(scan_results)}")
+            logger.info(f"Input scan_results count: {scan_results.count() if hasattr(scan_results, 'count') else len(scan_results)}")
             
+            # Convert to list and log sample
+            scan_results_list = list(scan_results)
+            logger.info(f"First 3 scan results for AI analysis:")
+            for i, result in enumerate(scan_results_list[:3]):
+                logger.info(f"  Result {i+1}:")
+                logger.info(f"    ID: {result.id}")
+                logger.info(f"    Category: {result.category}")
+                logger.info(f"    Name: {result.name}")
+                logger.info(f"    Severity: {result.severity}")
+                logger.info(f"    Description: {result.description[:100]}...")
+                if hasattr(result, 'details'):
+                    logger.info(f"    Details keys: {list(result.details.keys()) if result.details else 'None'}")
+
             # Use the pre-calculated security score
             scanner_score = self.security_score
+            logger.info(f"Using pre-calculated security score for AI: {scanner_score}/100")
             
-            logger.info(f"Using pre-calculated security score: {scanner_score}/100")
+            # LOG TARGET INFO
+            logger.info(f"Target URL: {self.scan.target_url}")
+            logger.info(f"Scan ID: {self.scan.id}")
             
             # Get AI-powered recommendations WITH THE SCANNER SCORE
+            logger.info("Calling enhanced AI agent...")
             ai_recommendations = self.enhanced_agent.analyze_scan_results_with_ai(
                 scan_results, 
                 self.scan.target_url,
                 scanner_score  # Pass the pre-calculated score
             )
             
-            # Ensure the AI uses the scanner score
+            # LOG AI RESPONSE
+            logger.info("=== AI AGENT RESPONSE ===")
+            logger.info(f"AI recommendations keys: {ai_recommendations.keys()}")
+            logger.info(f"Security score from AI: {ai_recommendations.get('security_score', 'NOT SET')}")
+            logger.info(f"Risk level: {ai_recommendations.get('overall_risk_level', 'NOT SET')}")
+            logger.info(f"Number of recommendations: {len(ai_recommendations.get('recommendations', []))}")
+            
+            # Log first recommendation sample
+            if ai_recommendations.get('recommendations'):
+                first_rec = ai_recommendations['recommendations'][0]
+                logger.info(f"Sample recommendation:")
+                logger.info(f"  Issue: {first_rec.get('issue_name', 'N/A')}")
+                logger.info(f"  Severity: {first_rec.get('severity', 'N/A')}")
+                logger.info(f"  Steps: {len(first_rec.get('remediation_steps', []))} steps")
+                # Ensure the AI uses the scanner score
             ai_recommendations['security_score'] = scanner_score
             
             # Store enhanced recommendations in database
@@ -640,7 +673,8 @@ class AIAnalysisService:
             
             # Convert Django QuerySet to the format your anomaly detector expects
             scan_results_list = []
-            
+            logger.info(f"Processing {scan_results.count()} scan results for anomaly detection")
+
             for result in scan_results:
                 # Format each ScanResult as a dictionary that your anomaly detector can understand
                 formatted_result = {
@@ -655,6 +689,7 @@ class AIAnalysisService:
                     'target_url': self.scan.target_url
                 }
                 scan_results_list.append(formatted_result)
+                
             
             logger.info(f"Formatted {len(scan_results_list)} scan results for anomaly detection")
             
@@ -670,6 +705,7 @@ class AIAnalysisService:
                 anomaly_detector = AnomalyDetectionModel()
                 
                 # Use the properly formatted data
+                logger.info("Calling AnomalyDetectionModel.detect_anomalies()...")
                 anomaly_results = anomaly_detector.detect_anomalies(scan_results_list)
                 
             except ImportError:
@@ -677,7 +713,11 @@ class AIAnalysisService:
                 logger.warning("ML anomaly model not available, using direct enhanced detection")
                 anomaly_results = self._run_enhanced_connection_anomaly_detection(scan_results_list)
             
-            logger.info(f"Enhanced anomaly detection completed: {anomaly_results}")
+            logger.info("=== ANOMALY DETECTION RESULTS ===")
+            logger.info(f"Anomaly results keys: {anomaly_results.keys()}")
+            logger.info(f"Is anomaly: {anomaly_results.get('is_anomaly', False)}")
+            logger.info(f"Anomaly score: {anomaly_results.get('anomaly_score', 0.0)}")
+            logger.info(f"Number of anomalies: {len(anomaly_results.get('anomalies', []))}")
             
             # FIXED: Create recommendations from enhanced anomaly detection with proper component names
             if anomaly_results.get('anomalies'):
