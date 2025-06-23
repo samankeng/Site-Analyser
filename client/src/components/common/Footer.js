@@ -11,7 +11,7 @@ const Footer = () => {
 
   const handleApiReferenceClick = () => {
     // Navigate to API documentation
-    window.open("/api-docs", "_blank");
+    window.open("/api-reference", "_blank");
   };
 
   const handlePrivacyClick = () => {

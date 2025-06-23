@@ -1210,35 +1210,35 @@ def api_request_with_retry(url, headers, max_retries=3):
             <h3>Example Error Handler</h3>
             <CodeBlock language="javascript">
               {`async function handleApiRequest(url, options) {
-  try {
-    const response = await fetch(url, options);
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      
-      switch (response.status) {
-        case 401:
-          throw new Error('Authentication failed. Check API key.');
-        case 403:
-          throw new Error('Insufficient permissions.');
-        case 429:
-          const retryAfter = response.headers.get('Retry-After');
-          throw new Error(\`Rate limited. Retry after \${retryAfter} seconds.\`);
-        case 500:
-        case 502:
-        case 503:
-          throw new Error('Server error. Please try again later.');
-        default:
-          throw new Error(errorData.error.message || 'Unknown error occurred');
-      }
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('API request failed:', error);
-    throw error;
-  }
-}`}
+                  try {
+                    const response = await fetch(url, options);
+                    
+                    if (!response.ok) {
+                      const errorData = await response.json();
+                      
+                      switch (response.status) {
+                        case 401:
+                          throw new Error('Authentication failed. Check API key.');
+                        case 403:
+                          throw new Error('Insufficient permissions.');
+                        case 429:
+                          const retryAfter = response.headers.get('Retry-After');
+                          throw new Error(\`Rate limited. Retry after \${retryAfter} seconds.\`);
+                        case 500:
+                        case 502:
+                        case 503:
+                          throw new Error('Server error. Please try again later.');
+                        default:
+                          throw new Error(errorData.error.message || 'Unknown error occurred');
+                      }
+                    }
+                    
+                    return await response.json();
+                  } catch (error) {
+                    console.error('API request failed:', error);
+                    throw error;
+                  }
+                }`}
             </CodeBlock>
 
             <h3>Getting Support</h3>
