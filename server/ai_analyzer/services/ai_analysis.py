@@ -184,7 +184,7 @@ class EnhancedAIAgent:
         """Format scan results into a structure the AI can easily understand"""
         formatted = {
             "target_url": target_url,
-            "scan_timestamp": scan_results.first().created_at.isoformat() if scan_results.exists() else None,
+            "scan_timestamp": scan_results[0].created_at.isoformat() if scan_results else None,
             "findings": {}
         }
         
@@ -193,14 +193,14 @@ class EnhancedAIAgent:
             category = result.category
             if category not in formatted["findings"]:
                 formatted["findings"][category] = []
-            
+                
             formatted["findings"][category].append({
                 "name": result.name,
                 "severity": result.severity,
                 "description": result.description,
                 "details": result.details if hasattr(result, 'details') else {}
             })
-        
+            
         return formatted
     
     def _create_comprehensive_prompt(self, formatted_results: Dict[str, Any], scanner_score: int = None) -> str:
