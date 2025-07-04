@@ -200,6 +200,14 @@ class EnhancedAIAgent:
                 "description": result.description,
                 "details": result.details if hasattr(result, 'details') else {}
             })
+
+            # Log the final formatted results
+        logger.info(f"📋 Formatted results summary:")
+        for category, findings in formatted["findings"].items():
+            logger.info(f"  📁 {category}: {len(findings)} findings")
+        
+        # Log the complete formatted structure
+        logger.info(f"🔍 Complete formatted data: {json.dumps(formatted, indent=2, default=str)}")
             
         return formatted
     
