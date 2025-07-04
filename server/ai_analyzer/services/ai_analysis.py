@@ -47,6 +47,24 @@ class EnhancedAIAgent:
             scanner_score: The security score calculated by the scanner (0-100)
         """
         try:
+
+            import json
+
+            # Log the raw scan_results object
+            logger.info("🔍 RAW SCAN_RESULTS DEBUG:")
+            try:
+                if hasattr(scan_results, 'model'):
+                    logger.info(f"  - Django QuerySet of: {scan_results.model}")
+                    logger.info(f"  - Query: {scan_results.query}")
+                
+                # Convert to list and log each item
+                results_list = list(scan_results)
+                for i, result in enumerate(results_list[:2]):  # First 2 items
+                    logger.info(f"  - Item {i}: {result.__dict__}")
+                    
+            except Exception as debug_e:
+                logger.error(f"Debug error: {debug_e}")
+            
             if not self.client:
                 logger.warning("OpenAI client not available, returning fallback response")
                 return self._create_fallback_response(scan_results, target_url, scanner_score)
